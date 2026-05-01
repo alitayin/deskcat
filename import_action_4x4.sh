@@ -24,7 +24,7 @@ case "$ACTION" in
     FRAME_COUNT=4
     ;;
   groom)
-    FRAME_COUNT=16
+    FRAME_COUNT=4
     ;;
   idle|tail)
     FRAME_COUNT=6

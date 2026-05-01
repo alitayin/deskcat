@@ -13,7 +13,7 @@ Use [Billy Reference](/Users/gongdongjie/learn1/native-swift/assets/references/B
 - `sleep`: 4 frames
 - `idle`: 6 frames
 - `tail`: 6 frames
-- `groom`: 16 frames
+- `groom`: 4 frames
 
 ## Import
 
