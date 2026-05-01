@@ -34,12 +34,16 @@ struct PetSpriteFrames {
         case .walkLeft:
             return walkLeft.isEmpty ? walkRight : walkLeft
         case .walkRight:
-            return walkRight
+            return walkRight.isEmpty ? walkLeft : walkRight
         case .groom:
             return groom.isEmpty ? idle : groom
         case .sleep:
             return sleep
         }
+    }
+
+    func shouldMirrorFrames(for action: PetAction) -> Bool {
+        action == .walkRight && walkRight.isEmpty && !walkLeft.isEmpty
     }
 
     var hasAny: Bool {
@@ -366,7 +370,15 @@ final class PetCanvasView: NSView {
             height: size.height
         )
 
-        image.draw(in: rect)
+        if spriteFrames.shouldMirrorFrames(for: action) {
+            ctx.saveGState()
+            ctx.translateBy(x: rect.midX, y: rect.midY)
+            ctx.scaleBy(x: -1, y: 1)
+            image.draw(in: NSRect(x: -rect.width / 2, y: -rect.height / 2, width: rect.width, height: rect.height))
+            ctx.restoreGState()
+        } else {
+            image.draw(in: rect)
+        }
         return true
     }
 

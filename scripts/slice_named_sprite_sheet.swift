@@ -5,7 +5,7 @@ import ImageIO
 import UniformTypeIdentifiers
 
 struct Options {
-    var outputSize = 362
+    var outputSize: Int?
     var backgroundTolerance = 96
     var contactSheetURL: URL?
 }
@@ -142,7 +142,7 @@ func usage(exitCode: Int32) -> Never {
       swift slice_named_sprite_sheet.swift [options] <input.png> <output-dir> <cols> <rows> <name1> ... <nameN>
 
     Options:
-      --output-size <px>             Output canvas size. Default: 362.
+      --output-size <px>             Output canvas size. Default: preserve each grid cell size.
       --background-tolerance <n>     RGB flood-fill tolerance. Default: 96.
       --contact-sheet <path.png>     Write a visual check sheet after slicing.
 
@@ -754,7 +754,8 @@ func run() throws {
         }
 
         let transparentCell = try cellBitmap.makeImage()
-        let (normalizedImage, metrics) = try normalizedFullCell(transparentCell, outputSize: options.outputSize)
+        let outputSize = options.outputSize ?? min(cell.width, cell.height)
+        let (normalizedImage, metrics) = try normalizedFullCell(transparentCell, outputSize: outputSize)
         outputs.append(FrameOutput(name: name, image: normalizedImage, metrics: metrics))
     }
 
