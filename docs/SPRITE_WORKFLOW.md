@@ -2,6 +2,8 @@
 
 Use `4x4` sprite sheets for AI-generated animation imports. The sheet has exactly 16 equal cells. Unused cells are allowed, but the input image must still be a real `4x4` grid with evenly sized cells.
 
+The 16 cells are candidates. An action does not need to use the first N cells. After visual review, choose the best cells in playback order and pass their 1-based indexes to the importer.
+
 ## Required Actions
 
 - `walk-right`: 10 frames
@@ -15,6 +17,12 @@ Use `4x4` sprite sheets for AI-generated animation imports. The sheet has exactl
 
 ```bash
 ./import_action_4x4.sh assets/source-sheets/ai-generated/walk-right.png walk-right
+```
+
+To select specific cells from the 16 candidates:
+
+```bash
+./import_action_4x4.sh assets/source-sheets/ai-generated/groom.png groom 1,2,5,6,9,10
 ```
 
 The importer writes the action frames into `assets/pet` only after slicing succeeds. It replaces only the selected action, so importing `sleep` does not delete accepted `walk-right` frames.
