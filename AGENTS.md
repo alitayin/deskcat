@@ -9,3 +9,6 @@
 - Use `./package-dmg.sh` only when changing packaging behavior or when the user asks for a DMG. It rebuilds `build/Billy.app`, deletes the existing `build/Billy.dmg`, and writes a new DMG.
 - Do not commit generated build outputs: `build/`, `*.dmg`, or `.DS_Store`.
 - For sprite assets, never overwrite runtime PNGs until generated frames have been inspected in a temporary output directory.
+- Sprite import scripts are only deterministic guards: frame count, grid divisibility, green-screen removal, and non-polluting staging. They are not the final visual judge.
+- Before committing sprite assets, an agent must inspect the generated contact sheet and the individual PNG frames. Reject the set if the cat drifts away from center, changes size, changes baseline unexpectedly, faces the wrong direction, has cropped body parts, has ghosting, or has illogical/non-continuous motion.
+- If a sprite set is rejected, move the source sheet or frames into `assets/rejected-pet-frames/` with a short reason in the filename or commit message. Do not keep rejected frames under `assets/pet`.
