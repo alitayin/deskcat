@@ -141,7 +141,7 @@ final class PetCanvasView: NSView {
     private var dragActive = false
     private var pendingSingleTap: DispatchWorkItem?
     private var actionStartTime = ProcessInfo.processInfo.systemUptime
-    private let groomCycleDuration: TimeInterval = 1.2
+    private let groomCycleDuration: TimeInterval = 2.5
     private let walkCycleDuration: TimeInterval = 2.0
 
     override var isOpaque: Bool { false }
@@ -358,10 +358,10 @@ final class PetCanvasView: NSView {
         }
 
         let image = spriteFrame(for: frames)
-        let size = action == .sleep ? NSSize(width: 184, height: 134) : NSSize(width: 180, height: 138)
+        let size = NSSize(width: 180, height: 180)
         let rect = NSRect(
             x: petPosition.x - (size.width / 2),
-            y: petPosition.y + (action == .sleep ? 10 : 22),
+            y: petPosition.y,
             width: size.width,
             height: size.height
         )
