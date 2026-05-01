@@ -4,6 +4,8 @@ Use `4x4` sprite sheets for AI-generated animation imports. The sheet has exactl
 
 The 16 cells are candidates. An action does not need to use the first N cells. After visual review, choose the best cells in playback order and pass their 1-based indexes to the importer.
 
+Use [Billy Reference](/Users/gongdongjie/learn1/native-swift/assets/references/BILLY_REFERENCE.md) for every generation prompt.
+
 ## Required Actions
 
 - `walk-right`: 10 frames
