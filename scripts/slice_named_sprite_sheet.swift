@@ -366,6 +366,13 @@ func colorDistance(_ left: RGBA, _ right: RGBA) -> Int {
         abs(Int(left.b) - Int(right.b))
 }
 
+func isChromaGreen(_ pixel: RGBA) -> Bool {
+    let red = Int(pixel.r)
+    let green = Int(pixel.g)
+    let blue = Int(pixel.b)
+    return green >= 120 && green - red >= 35 && green - blue >= 35
+}
+
 func removeFloodFilledBackground(from bitmap: Bitmap, tolerance: Int) {
     let background = dominantBorderColor(in: bitmap)
     var visited = Array(repeating: false, count: bitmap.width * bitmap.height)
@@ -379,7 +386,7 @@ func removeFloodFilledBackground(from bitmap: Bitmap, tolerance: Int) {
         if pixel.a <= 8 {
             return true
         }
-        return colorDistance(pixel, background) <= tolerance
+        return colorDistance(pixel, background) <= tolerance || isChromaGreen(pixel)
     }
 
     func enqueue(_ x: Int, _ y: Int) {
