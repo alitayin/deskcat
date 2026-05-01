@@ -144,7 +144,14 @@ func loadPetSprites() -> PetSpriteFrames {
 }
 
 final class PetCanvasView: NSView {
-    var action: PetAction = .idle { didSet { needsDisplay = true } }
+    var action: PetAction = .idle {
+        didSet {
+            if oldValue != action {
+                actionStartTime = ProcessInfo.processInfo.systemUptime
+            }
+            needsDisplay = true
+        }
+    }
     var frameTick: Int = 0 { didSet { needsDisplay = true } }
     var spriteFrames: PetSpriteFrames = .empty { didSet { needsDisplay = true } }
     var petPosition = NSPoint(x: 110, y: 120) { didSet { needsDisplay = true } }
@@ -158,6 +165,8 @@ final class PetCanvasView: NSView {
     private var lastDragPoint: NSPoint = .zero
     private var dragActive = false
     private var pendingSingleTap: DispatchWorkItem?
+    private var actionStartTime = ProcessInfo.processInfo.systemUptime
+    private let groomCycleDuration: TimeInterval = 1.2
 
     override var isOpaque: Bool { false }
 
@@ -398,7 +407,7 @@ final class PetCanvasView: NSView {
         case .walkLeft, .walkRight:
             return frames[loopedIndex(frameCount: frames.count, pace: 3)]
         case .groom:
-            return frames[loopedIndex(frameCount: frames.count, pace: 7)]
+            return frames[timedLoopedIndex(frameCount: frames.count, duration: groomCycleDuration)]
         case .tail:
             return frames[loopedIndex(frameCount: frames.count, pace: 8)]
         case .idle:
@@ -413,6 +422,16 @@ final class PetCanvasView: NSView {
             return 0
         }
         return (frameTick / max(pace, 1)) % frameCount
+    }
+
+    private func timedLoopedIndex(frameCount: Int, duration: TimeInterval) -> Int {
+        guard frameCount > 1, duration > 0 else {
+            return 0
+        }
+
+        let elapsed = ProcessInfo.processInfo.systemUptime - actionStartTime
+        let progress = elapsed.truncatingRemainder(dividingBy: duration) / duration
+        return min(Int(progress * Double(frameCount)), frameCount - 1)
     }
 
     private func pingPongIndex(frameCount: Int, pace: Int) -> Int {
