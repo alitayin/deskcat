@@ -152,12 +152,10 @@ final class PetCanvasView: NSView {
     private var dragActive = false
     private var pendingSingleTap: DispatchWorkItem?
     private var actionStartTime = ProcessInfo.processInfo.systemUptime
-    private let idleFrameDuration: TimeInterval = 0.3
-    private let observeFrameDuration: TimeInterval = 0.3
-    private let stretchFrameDuration: TimeInterval = 0.3
-    private let groomCycleDuration: TimeInterval = 2.5
-    private let walkCycleDuration: TimeInterval = 1.8
-    private let sleepCycleDuration: TimeInterval = 2.0
+    private let defaultSpriteSize = NSSize(width: 160, height: 160)
+    private let walkSpriteSize = NSSize(width: 200, height: 200)
+    private let defaultFrameDuration: TimeInterval = 0.5
+    private let walkFrameDuration: TimeInterval = 0.3
 
     override var isOpaque: Bool { false }
 
@@ -373,7 +371,7 @@ final class PetCanvasView: NSView {
         }
 
         let image = spriteFrame(for: frames)
-        let size = NSSize(width: 180, height: 180)
+        let size = spriteDrawSize()
         let rect = NSRect(
             x: petPosition.x - (size.width / 2),
             y: petPosition.y,
@@ -393,20 +391,21 @@ final class PetCanvasView: NSView {
         return true
     }
 
+    private func spriteDrawSize() -> NSSize {
+        switch action {
+        case .walkLeft, .walkRight:
+            return walkSpriteSize
+        default:
+            return defaultSpriteSize
+        }
+    }
+
     private func spriteFrame(for frames: [NSImage]) -> NSImage {
         switch action {
         case .walkLeft, .walkRight:
-            return frames[timedLoopedIndex(frameCount: frames.count, duration: walkCycleDuration)]
-        case .groom:
-            return frames[timedLoopedIndex(frameCount: frames.count, duration: groomCycleDuration)]
-        case .idle:
-            return frames[timedLoopedIndex(frameCount: frames.count, duration: idleFrameDuration * Double(frames.count))]
-        case .observe:
-            return frames[timedLoopedIndex(frameCount: frames.count, duration: observeFrameDuration * Double(frames.count))]
-        case .stretch:
-            return frames[timedLoopedIndex(frameCount: frames.count, duration: stretchFrameDuration * Double(frames.count))]
-        case .sleep:
-            return frames[timedLoopedIndex(frameCount: frames.count, duration: sleepCycleDuration)]
+            return frames[timedLoopedIndex(frameCount: frames.count, frameDuration: walkFrameDuration)]
+        default:
+            return frames[timedLoopedIndex(frameCount: frames.count, frameDuration: defaultFrameDuration)]
         }
     }
 
@@ -425,6 +424,10 @@ final class PetCanvasView: NSView {
         let elapsed = ProcessInfo.processInfo.systemUptime - actionStartTime
         let progress = elapsed.truncatingRemainder(dividingBy: duration) / duration
         return min(Int(progress * Double(frameCount)), frameCount - 1)
+    }
+
+    private func timedLoopedIndex(frameCount: Int, frameDuration: TimeInterval) -> Int {
+        timedLoopedIndex(frameCount: frameCount, duration: frameDuration * Double(frameCount))
     }
 
     private func pingPongIndex(frameCount: Int, pace: Int) -> Int {
