@@ -162,7 +162,7 @@ func usage(exitCode: Int32) -> Never {
                                      Fail if too much alpha sits outside the main subject.
 
     Example:
-      swift scripts/slice_named_sprite_sheet.swift --strict-pet-counts source.png assets/pet 5 2 walk-1 walk-2 walk-3 walk-4 walk-5 walk-6 walk-7 walk-8 walk-9 walk-10
+      swift scripts/slice_named_sprite_sheet.swift --strict-pet-counts source.png assets/pet 4 4 walk-1 walk-2 walk-3 walk-4 walk-5 walk-6 walk-7 walk-8 walk-9 walk-10 _skip _skip _skip _skip _skip _skip
 
     """, stderr)
     exit(exitCode)
@@ -257,11 +257,16 @@ func parseArguments(_ arguments: [String]) throws -> (Options, URL, URL, Int, In
         throw ScriptError("Columns, rows, and frame names do not match: \(columns)x\(rows)=\(columns * rows), names=\(names.count).")
     }
 
+    let outputNames = names.filter { !isSkippedFrameName($0) }
     if options.strictPetCounts {
-        try validatePetFrameCounts(names)
+        try validatePetFrameCounts(outputNames)
     }
 
     return (options, inputURL, outputDirectory, columns, rows, names)
+}
+
+func isSkippedFrameName(_ frameName: String) -> Bool {
+    frameName == "_" || frameName == "-" || frameName.hasPrefix("_skip") || frameName.hasPrefix("skip")
 }
 
 func groupName(for frameName: String) -> String {
@@ -284,7 +289,7 @@ func expectedFrameCount(for group: String) -> Int {
 }
 
 func validatePetFrameCounts(_ names: [String]) throws {
-    let counts = Dictionary(grouping: names, by: groupName).mapValues(\.count)
+    let counts = Dictionary(grouping: names.filter { !isSkippedFrameName($0) }, by: groupName).mapValues(\.count)
     for group in counts.keys.sorted() {
         let expected = expectedFrameCount(for: group)
         let actual = counts[group] ?? 0
@@ -775,6 +780,10 @@ func run() throws {
     var outputs: [FrameOutput] = []
 
     for (index, name) in names.enumerated() {
+        if isSkippedFrameName(name) {
+            continue
+        }
+
         let column = index % columns
         let row = index / columns
         let rect = CGRect(x: column * cellWidth, y: row * cellHeight, width: cellWidth, height: cellHeight)
@@ -828,7 +837,7 @@ func run() throws {
         print("Anchor report: \(anchorReportURL.path)")
     }
 
-    let counts = Dictionary(grouping: names, by: groupName).mapValues(\.count)
+    let counts = Dictionary(grouping: names.filter { !isSkippedFrameName($0) }, by: groupName).mapValues(\.count)
     for group in counts.keys.sorted() {
         print("\(group): \(counts[group] ?? 0)")
     }
