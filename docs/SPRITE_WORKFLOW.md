@@ -12,6 +12,7 @@ Use [Billy Reference](/Users/gongdongjie/learn1/native-swift/assets/references/B
 - `walk-right`: optional; the app mirrors `walk-left` at runtime when no right-facing frames exist
 - `sleep`: 4 frames
 - `daze`: 10 frames, 300ms per frame
+- `look`: 11 frames, 300ms per frame; shown as `观察` in the app
 - `groom`: 5 frames
 
 ## Import
