@@ -9,6 +9,7 @@ enum PetMode {
 enum PetAction {
     case idle
     case observe
+    case stretch
     case walkLeft
     case walkRight
     case groom
@@ -18,12 +19,13 @@ enum PetAction {
 struct PetSpriteFrames {
     let idle: [NSImage]
     let observe: [NSImage]
+    let stretch: [NSImage]
     let walkLeft: [NSImage]
     let walkRight: [NSImage]
     let groom: [NSImage]
     let sleep: [NSImage]
 
-    static let empty = PetSpriteFrames(idle: [], observe: [], walkLeft: [], walkRight: [], groom: [], sleep: [])
+    static let empty = PetSpriteFrames(idle: [], observe: [], stretch: [], walkLeft: [], walkRight: [], groom: [], sleep: [])
 
     func frames(for action: PetAction) -> [NSImage] {
         switch action {
@@ -31,6 +33,8 @@ struct PetSpriteFrames {
             return idle
         case .observe:
             return observe.isEmpty ? idle : observe
+        case .stretch:
+            return stretch.isEmpty ? idle : stretch
         case .walkLeft:
             return walkLeft.isEmpty ? walkRight : walkLeft
         case .walkRight:
@@ -47,7 +51,7 @@ struct PetSpriteFrames {
     }
 
     var hasAny: Bool {
-        !idle.isEmpty || !observe.isEmpty || !walkLeft.isEmpty || !walkRight.isEmpty || !groom.isEmpty || !sleep.isEmpty
+        !idle.isEmpty || !observe.isEmpty || !stretch.isEmpty || !walkLeft.isEmpty || !walkRight.isEmpty || !groom.isEmpty || !sleep.isEmpty
     }
 }
 
@@ -103,6 +107,7 @@ func loadPetSprites() -> PetSpriteFrames {
         let daze = loadSprites(prefix: "daze", from: directory)
         let idle = daze.isEmpty ? loadSprites(prefix: "idle", from: directory) : daze
         let observe = loadSprites(prefix: "look", from: directory)
+        let stretch = loadSprites(prefix: "lazy", from: directory)
         let walkLeft = loadSprites(prefix: "walk-left", from: directory)
         let walkRight = loadStableWalkSprites(from: directory)
         let groom = loadSprites(prefix: "groom", from: directory)
@@ -110,6 +115,7 @@ func loadPetSprites() -> PetSpriteFrames {
         let spriteFrames = PetSpriteFrames(
             idle: idle,
             observe: observe,
+            stretch: stretch,
             walkLeft: walkLeft,
             walkRight: walkRight,
             groom: groom,
@@ -148,6 +154,7 @@ final class PetCanvasView: NSView {
     private var actionStartTime = ProcessInfo.processInfo.systemUptime
     private let idleFrameDuration: TimeInterval = 0.3
     private let observeFrameDuration: TimeInterval = 0.3
+    private let stretchFrameDuration: TimeInterval = 0.3
     private let groomCycleDuration: TimeInterval = 2.5
     private let walkCycleDuration: TimeInterval = 1.8
     private let sleepCycleDuration: TimeInterval = 2.0
@@ -396,6 +403,8 @@ final class PetCanvasView: NSView {
             return frames[timedLoopedIndex(frameCount: frames.count, duration: idleFrameDuration * Double(frames.count))]
         case .observe:
             return frames[timedLoopedIndex(frameCount: frames.count, duration: observeFrameDuration * Double(frames.count))]
+        case .stretch:
+            return frames[timedLoopedIndex(frameCount: frames.count, duration: stretchFrameDuration * Double(frames.count))]
         case .sleep:
             return frames[timedLoopedIndex(frameCount: frames.count, duration: sleepCycleDuration)]
         }
@@ -605,15 +614,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         let roll = Double.random(in: 0 ... 1)
-        if roll < 0.28 {
+        if roll < 0.24 {
             action = .idle
             scheduleNextBehavior(after: Double.random(in: 3.5 ... 5.5))
-        } else if roll < 0.46 {
+        } else if roll < 0.40 {
             action = .observe
             scheduleNextBehavior(after: Double.random(in: 4.2 ... 6.8))
-        } else if roll < 0.72 {
+        } else if roll < 0.54 {
+            action = .stretch
+            scheduleNextBehavior(after: Double.random(in: 3.2 ... 5.0))
+        } else if roll < 0.76 {
             startWalk()
-        } else if roll < 0.88 {
+        } else if roll < 0.90 {
             action = .groom
             scheduleNextBehavior(after: Double.random(in: 5.0 ... 9.0))
         } else {
@@ -664,6 +676,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(withTitle: "自动散步", action: #selector(menuAuto), keyEquivalent: "")
         menu.addItem(withTitle: "发呆", action: #selector(menuIdle), keyEquivalent: "")
         menu.addItem(withTitle: "观察", action: #selector(menuObserve), keyEquivalent: "")
+        menu.addItem(withTitle: "伸懒腰", action: #selector(menuStretch), keyEquivalent: "")
         menu.addItem(withTitle: "舔爪洗脸", action: #selector(menuGroom), keyEquivalent: "")
         menu.addItem(withTitle: "睡觉", action: #selector(menuSleep), keyEquivalent: "")
         menu.addItem(.separator())
@@ -678,6 +691,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         behaviorTimer?.invalidate()
         walkDestination = nil
         action = .observe
+    }
+    @objc private func menuStretch() {
+        mode = .idle
+        behaviorTimer?.invalidate()
+        walkDestination = nil
+        action = .stretch
     }
     @objc private func menuGroom() {
         mode = .idle
