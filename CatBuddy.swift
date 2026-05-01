@@ -8,43 +8,42 @@ enum PetMode {
 
 enum PetAction {
     case idle
-    case lookAround
+    case tail
     case walkLeft
     case walkRight
     case groom
-    case stretch
     case sleep
 }
 
 struct PetSpriteFrames {
     let idle: [NSImage]
-    let lookAround: [NSImage]
-    let walk: [NSImage]
+    let tail: [NSImage]
+    let walkLeft: [NSImage]
+    let walkRight: [NSImage]
     let groom: [NSImage]
-    let stretch: [NSImage]
     let sleep: [NSImage]
 
-    static let empty = PetSpriteFrames(idle: [], lookAround: [], walk: [], groom: [], stretch: [], sleep: [])
+    static let empty = PetSpriteFrames(idle: [], tail: [], walkLeft: [], walkRight: [], groom: [], sleep: [])
 
     func frames(for action: PetAction) -> [NSImage] {
         switch action {
         case .idle:
             return idle
-        case .lookAround:
-            return lookAround.isEmpty ? idle : lookAround
-        case .walkLeft, .walkRight:
-            return walk
+        case .tail:
+            return tail.isEmpty ? idle : tail
+        case .walkLeft:
+            return walkLeft.isEmpty ? walkRight : walkLeft
+        case .walkRight:
+            return walkRight
         case .groom:
-            return groom.isEmpty ? (lookAround.isEmpty ? idle : lookAround) : groom
-        case .stretch:
-            return stretch.isEmpty ? (lookAround.isEmpty ? idle : lookAround) : stretch
+            return groom.isEmpty ? idle : groom
         case .sleep:
             return sleep
         }
     }
 
     var hasAny: Bool {
-        !idle.isEmpty || !lookAround.isEmpty || !walk.isEmpty || !groom.isEmpty || !stretch.isEmpty || !sleep.isEmpty
+        !idle.isEmpty || !tail.isEmpty || !walkLeft.isEmpty || !walkRight.isEmpty || !groom.isEmpty || !sleep.isEmpty
     }
 }
 
@@ -78,10 +77,16 @@ func loadSprites(prefix: String, from directory: URL) -> [NSImage] {
 func loadStableWalkSprites(from directory: URL) -> [NSImage] {
     let explicitRightFacing = loadSprites(prefix: "walk-right", from: directory)
     if !explicitRightFacing.isEmpty {
+        if explicitRightFacing.count >= 8 {
+            return explicitRightFacing
+        }
         return curatedRightWalkFrames(explicitRightFacing)
     }
 
     let allWalkFrames = loadSprites(prefix: "walk", from: directory)
+    if allWalkFrames.count >= 8 {
+        return allWalkFrames
+    }
     guard allWalkFrames.count >= 8 else {
         return curatedRightWalkFrames(allWalkFrames)
     }
@@ -117,17 +122,17 @@ func loadPetSprites() -> PetSpriteFrames {
 
     for directory in searchDirectories {
         let idle = loadSprites(prefix: "idle", from: directory)
-        let lookAround = loadSprites(prefix: "look", from: directory)
-        let walk = loadStableWalkSprites(from: directory)
+        let tail = loadSprites(prefix: "tail", from: directory)
+        let walkLeft = loadSprites(prefix: "walk-left", from: directory)
+        let walkRight = loadStableWalkSprites(from: directory)
         let groom = loadSprites(prefix: "groom", from: directory)
-        let stretch = loadSprites(prefix: "stretch", from: directory)
         let sleep = loadSprites(prefix: "sleep", from: directory)
         let spriteFrames = PetSpriteFrames(
             idle: idle,
-            lookAround: lookAround,
-            walk: walk,
+            tail: tail,
+            walkLeft: walkLeft,
+            walkRight: walkRight,
             groom: groom,
-            stretch: stretch,
             sleep: sleep
         )
         if spriteFrames.hasAny {
@@ -138,50 +143,13 @@ func loadPetSprites() -> PetSpriteFrames {
     return .empty
 }
 
-final class SpeechBubbleView: NSView {
-    var text: String = "..." {
-        didSet {
-            needsDisplay = true
-        }
-    }
-
-    override var isOpaque: Bool { false }
-
-    override func draw(_ dirtyRect: NSRect) {
-        super.draw(dirtyRect)
-
-        let bubbleRect = NSRect(x: 6, y: 14, width: bounds.width - 12, height: bounds.height - 20)
-        let bubblePath = NSBezierPath(roundedRect: bubbleRect, xRadius: 18, yRadius: 18)
-        NSColor(calibratedWhite: 1.0, alpha: 0.96).setFill()
-        bubblePath.fill()
-
-        let tail = NSBezierPath()
-        tail.move(to: NSPoint(x: bounds.midX - 10, y: 18))
-        tail.line(to: NSPoint(x: bounds.midX, y: 4))
-        tail.line(to: NSPoint(x: bounds.midX + 10, y: 18))
-        tail.close()
-        tail.fill()
-
-        let paragraph = NSMutableParagraphStyle()
-        paragraph.alignment = .center
-
-        let attributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 13, weight: .medium),
-            .foregroundColor: NSColor(calibratedRed: 0.20, green: 0.24, blue: 0.29, alpha: 1),
-            .paragraphStyle: paragraph
-        ]
-
-        let textRect = NSRect(x: 18, y: 28, width: bubbleRect.width - 24, height: bubbleRect.height - 18)
-        (text as NSString).draw(in: textRect, withAttributes: attributes)
-    }
-}
-
 final class PetCanvasView: NSView {
     var action: PetAction = .idle { didSet { needsDisplay = true } }
     var frameTick: Int = 0 { didSet { needsDisplay = true } }
     var spriteFrames: PetSpriteFrames = .empty { didSet { needsDisplay = true } }
     var petPosition = NSPoint(x: 110, y: 120) { didSet { needsDisplay = true } }
     var onTap: (() -> Void)?
+    var onDoubleTap: ((NSPoint) -> Void)?
     var onRightClick: (() -> Void)?
     var onDrag: ((NSSize) -> Void)?
     var onInteractionStateChange: ((Bool) -> Void)?
@@ -189,6 +157,7 @@ final class PetCanvasView: NSView {
     private var mouseDownPoint: NSPoint = .zero
     private var lastDragPoint: NSPoint = .zero
     private var dragActive = false
+    private var pendingSingleTap: DispatchWorkItem?
 
     override var isOpaque: Bool { false }
 
@@ -225,7 +194,19 @@ final class PetCanvasView: NSView {
     override func mouseUp(with event: NSEvent) {
         let distance = hypot(event.locationInWindow.x - mouseDownPoint.x, event.locationInWindow.y - mouseDownPoint.y)
         if !dragActive || distance < 3 {
-            onTap?()
+            if event.clickCount >= 2 {
+                pendingSingleTap?.cancel()
+                pendingSingleTap = nil
+                onDoubleTap?(event.locationInWindow)
+            } else {
+                let tapWork = DispatchWorkItem { [weak self] in
+                    self?.onTap?()
+                    self?.pendingSingleTap = nil
+                }
+                pendingSingleTap?.cancel()
+                pendingSingleTap = tapWork
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.24, execute: tapWork)
+            }
         }
         dragActive = false
         onInteractionStateChange?(false)
@@ -400,15 +381,7 @@ final class PetCanvasView: NSView {
             height: size.height
         )
 
-        if action == .walkLeft || action == .walkRight {
-            ctx.saveGState()
-            ctx.translateBy(x: rect.midX, y: rect.midY)
-            if action == .walkLeft {
-                ctx.scaleBy(x: -1, y: 1)
-            }
-            image.draw(in: NSRect(x: -rect.width / 2, y: -rect.height / 2, width: rect.width, height: rect.height))
-            ctx.restoreGState()
-        } else if action == .walkLeft {
+        if action == .walkLeft {
             ctx.saveGState()
             ctx.translateBy(x: rect.midX, y: rect.midY)
             ctx.scaleBy(x: -1, y: 1)
@@ -422,18 +395,16 @@ final class PetCanvasView: NSView {
 
     private func spriteFrame(for frames: [NSImage]) -> NSImage {
         switch action {
+        case .walkLeft, .walkRight:
+            return frames[loopedIndex(frameCount: frames.count, pace: 3)]
+        case .groom:
+            return frames[loopedIndex(frameCount: frames.count, pace: 7)]
+        case .tail:
+            return frames[loopedIndex(frameCount: frames.count, pace: 8)]
         case .idle:
             return frames[loopedIndex(frameCount: frames.count, pace: 10)]
-        case .lookAround:
-            return frames[pingPongIndex(frameCount: frames.count, pace: 18)]
-        case .walkLeft, .walkRight:
-            return frames[loopedIndex(frameCount: frames.count, pace: 14)]
-        case .groom:
-            return frames[pingPongIndex(frameCount: frames.count, pace: 12)]
-        case .stretch:
-            return frames[pingPongIndex(frameCount: frames.count, pace: 16)]
         case .sleep:
-            return frames[pingPongIndex(frameCount: frames.count, pace: 24)]
+            return frames[loopedIndex(frameCount: frames.count, pace: 12)]
         }
     }
 
@@ -462,24 +433,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var window: NSWindow!
     private var rootView: NSView!
     private var petView: PetCanvasView!
-    private var bubbleView: SpeechBubbleView!
     private var animationTimer: Timer?
     private var behaviorTimer: Timer?
-    private var bubbleTimer: Timer?
     private var passthroughTimer: Timer?
     private var userIsInteracting = false
-
-    private let sayings = [
-        "喵～",
-        "喵～～～",
-        "咪呜～",
-        "喵。"
-    ]
 
     private var mode: PetMode = .auto
     private var action: PetAction = .idle {
         didSet {
-            petView.action = action
+            if oldValue != action {
+                frameTick = 0
+            }
+            petView?.action = action
         }
     }
     private var frameTick: Int = 0 {
@@ -492,12 +457,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var petPosition = NSPoint(x: 110, y: 120) {
         didSet {
             petView?.petPosition = petPosition
-            updateBubblePosition()
             updateMousePassthrough()
         }
     }
 
-    private let walkSpeed: CGFloat = 3.2
+    private let animationFrameInterval: TimeInterval = 1.0 / 20.0
+    private let walkSpeed: CGFloat = 2.7
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         buildWindow()
@@ -536,10 +501,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         rootView.wantsLayer = true
         rootView.layer?.backgroundColor = NSColor.clear.cgColor
 
-        bubbleView = SpeechBubbleView(frame: NSRect(x: 20, y: 148, width: 180, height: 74))
-        bubbleView.isHidden = true
-        rootView.addSubview(bubbleView)
-
         petView = PetCanvasView(frame: rootView.bounds)
         rootView.addSubview(petView)
 
@@ -550,7 +511,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func wireCallbacks() {
         petView.onTap = { [weak self] in
-            self?.sayRandomLine()
+            self?.handleTap()
+        }
+
+        petView.onDoubleTap = { [weak self] clickPoint in
+            self?.shooPet(from: clickPoint)
         }
 
         petView.onRightClick = { [weak self] in
@@ -568,7 +533,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func startAnimationLoop() {
-        animationTimer = Timer.scheduledTimer(withTimeInterval: 0.06, repeats: true) { [weak self] _ in
+        animationTimer = Timer.scheduledTimer(withTimeInterval: animationFrameInterval, repeats: true) { [weak self] _ in
             self?.tick()
         }
     }
@@ -594,7 +559,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func dragPet(delta: NSSize) {
-        let nextPosition = NSPoint(x: petPosition.x + delta.width, y: petLaneY())
+        if isWalking {
+            walkDestination = nil
+            action = .idle
+            scheduleNextBehavior(after: Double.random(in: 2.0 ... 3.2))
+        }
+
+        let nextPosition = NSPoint(x: petPosition.x + delta.width, y: petPosition.y + delta.height)
         petPosition = clampedPetPosition(nextPosition)
     }
 
@@ -631,59 +602,67 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         let roll = Double.random(in: 0 ... 1)
-        if roll < 0.14 {
+        if roll < 0.24 {
             action = .idle
-            maybeAutoMeow(chance: 0.06)
             scheduleNextBehavior(after: Double.random(in: 3.5 ... 5.5))
-        } else if roll < 0.28 {
-            action = .lookAround
-            maybeAutoMeow(chance: 0.08)
+        } else if roll < 0.40 {
+            action = .tail
             scheduleNextBehavior(after: Double.random(in: 3.8 ... 5.8))
-        } else if roll < 0.68 {
+        } else if roll < 0.70 {
             startWalk()
-        } else if roll < 0.78 {
+        } else if roll < 0.88 {
             action = .groom
             scheduleNextBehavior(after: Double.random(in: 5.0 ... 9.0))
-        } else if roll < 0.90 {
-            action = .stretch
-            scheduleNextBehavior(after: Double.random(in: 3.4 ... 5.4))
         } else {
             action = .sleep
             scheduleNextBehavior(after: Double.random(in: 7.0 ... 12.0))
         }
     }
 
-    private func sayRandomLine() {
-        say(sayings.randomElement() ?? "喵。", autoHideAfter: 2.8)
+    private func handleTap() {
+        if isWalking {
+            walkDestination = nil
+            action = .idle
+            scheduleNextBehavior(after: Double.random(in: 2.0 ... 3.2))
+        }
     }
 
-    private func maybeAutoMeow(chance: Double) {
-        guard Double.random(in: 0 ... 1) < chance else {
+    private func shooPet(from clickPoint: NSPoint) {
+        mode = .auto
+        behaviorTimer?.invalidate()
+        walkDestination = nil
+
+        let bounds = movementBounds()
+        let current = clampedPetPosition(petPosition)
+        petPosition = current
+
+        var direction: CGFloat = clickPoint.x <= current.x ? 1 : -1
+        if current.x <= bounds.minX + 32 {
+            direction = 1
+        } else if current.x >= bounds.maxX - 32 {
+            direction = -1
+        }
+
+        let availableDistance = direction > 0 ? bounds.maxX - current.x : current.x - bounds.minX
+        guard availableDistance > 24 else {
+            nextWalkDirection = -direction
+            scheduleNextBehavior(after: Double.random(in: 1.0 ... 2.0))
             return
         }
-        sayRandomLine()
-    }
 
-    private func say(_ text: String, autoHideAfter seconds: TimeInterval) {
-        bubbleTimer?.invalidate()
-        bubbleView.text = text
-        bubbleView.isHidden = false
-        updateBubblePosition()
-        bubbleTimer = Timer.scheduledTimer(withTimeInterval: seconds, repeats: false) { [weak self] _ in
-            self?.bubbleView.isHidden = true
-        }
+        let preferredDistance = min(max(bounds.width * 0.48, 380), 760)
+        let destinationX = current.x + direction * min(preferredDistance, availableDistance)
+        nextWalkDirection = -direction
+        startWalk(to: NSPoint(x: destinationX, y: current.y))
     }
 
     private func showContextMenu() {
-        let menu = NSMenu(title: "CatBuddy")
+        let menu = NSMenu(title: "Billy")
         menu.addItem(withTitle: "自动散步", action: #selector(menuAuto), keyEquivalent: "")
         menu.addItem(withTitle: "发呆", action: #selector(menuIdle), keyEquivalent: "")
-        menu.addItem(withTitle: "左看看右看看", action: #selector(menuLookAround), keyEquivalent: "")
+        menu.addItem(withTitle: "甩尾巴", action: #selector(menuTail), keyEquivalent: "")
         menu.addItem(withTitle: "舔爪洗脸", action: #selector(menuGroom), keyEquivalent: "")
-        menu.addItem(withTitle: "伸懒腰", action: #selector(menuStretch), keyEquivalent: "")
         menu.addItem(withTitle: "睡觉", action: #selector(menuSleep), keyEquivalent: "")
-        menu.addItem(withTitle: "喵一句", action: #selector(menuSpeak), keyEquivalent: "")
-        menu.addItem(withTitle: "回窝", action: #selector(menuHome), keyEquivalent: "")
         menu.addItem(.separator())
         menu.addItem(withTitle: "退出", action: #selector(menuQuit), keyEquivalent: "")
         NSMenu.popUpContextMenu(menu, with: NSApp.currentEvent!, for: petView)
@@ -691,31 +670,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func menuAuto() { setMode(.auto) }
     @objc private func menuIdle() { setMode(.idle) }
-    @objc private func menuLookAround() {
+    @objc private func menuTail() {
         mode = .idle
         behaviorTimer?.invalidate()
-        action = .lookAround
+        action = .tail
     }
     @objc private func menuGroom() {
         mode = .idle
         behaviorTimer?.invalidate()
         action = .groom
     }
-    @objc private func menuStretch() {
-        mode = .idle
-        behaviorTimer?.invalidate()
-        action = .stretch
-    }
     @objc private func menuSleep() { setMode(.sleep) }
-    @objc private func menuSpeak() { sayRandomLine() }
-    @objc private func menuHome() {
-        moveHome()
-        setMode(.sleep)
-    }
     @objc private func menuQuit() { NSApp.terminate(nil) }
 
     private func moveHome() {
-        petPosition = clampedPetPosition(NSPoint(x: rootView.bounds.midX, y: petLaneY()))
+        petPosition = clampedPetPosition(NSPoint(x: rootView.bounds.midX, y: defaultLaneY()))
     }
 
     private func moveWalkStep() {
@@ -737,12 +706,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         let stepX = (dx >= 0 ? 1 : -1) * walkSpeed
-        petPosition = clampedPetPosition(NSPoint(x: petPosition.x + stepX, y: petLaneY()))
+        petPosition = clampedPetPosition(NSPoint(x: petPosition.x + stepX, y: destination.y))
     }
 
     private func startWalk() {
         let bounds = movementBounds()
         let current = clampedPetPosition(petPosition)
+        petPosition = current
         var direction = nextWalkDirection
         if current.x <= bounds.minX + 24 {
             direction = 1
@@ -754,7 +724,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let desiredDistance = CGFloat.random(in: minHorizontalDistance ... maxHorizontalDistance)
         let destinationX = min(max(current.x + (direction * desiredDistance), bounds.minX), bounds.maxX)
         nextWalkDirection = -direction
-        startWalk(to: NSPoint(x: destinationX, y: petLaneY()))
+        startWalk(to: NSPoint(x: destinationX, y: current.y))
     }
 
     private func startWalk(to destination: NSPoint) {
@@ -763,12 +733,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         action = clampedDestination.x >= petPosition.x ? .walkRight : .walkLeft
     }
 
+    private var isWalking: Bool {
+        action == .walkLeft || action == .walkRight
+    }
+
     private func movementBounds() -> NSRect {
         let screenBounds = rootView.bounds
-        let minX: CGFloat = 92
-        let maxX = max(minX, screenBounds.width - 110)
-        let minY: CGFloat = 42
-        let maxY = max(minY, screenBounds.height - 222)
+        let minX: CGFloat = 90
+        let maxX = max(minX, screenBounds.width - 90)
+        let minY: CGFloat = 8
+        let maxY = max(minY, screenBounds.height - 168)
         return NSRect(
             x: minX,
             y: minY,
@@ -777,28 +751,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
     }
 
-    private func petLaneY() -> CGFloat {
+    private func defaultLaneY() -> CGFloat {
         let screenBounds = rootView.bounds
-        let minY: CGFloat = 42
-        let maxY = max(minY, screenBounds.height - 222)
-        return min(max(screenBounds.height * 0.34, minY), maxY)
+        let bounds = movementBounds()
+        return min(max(screenBounds.height * 0.34, bounds.minY), bounds.maxY)
     }
 
     private func clampedPetPosition(_ point: NSPoint) -> NSPoint {
         let bounds = movementBounds()
         return NSPoint(
             x: min(max(point.x, bounds.minX), bounds.maxX),
-            y: petLaneY()
+            y: min(max(point.y, bounds.minY), bounds.maxY)
         )
-    }
-
-    private func updateBubblePosition() {
-        guard bubbleView != nil, rootView != nil else {
-            return
-        }
-        let x = max(16, min(petPosition.x - bubbleView.frame.width / 2, rootView.bounds.width - bubbleView.frame.width - 16))
-        let y = max(16, min(petPosition.y + 170, rootView.bounds.height - bubbleView.frame.height - 16))
-        bubbleView.frame.origin = NSPoint(x: x, y: y)
     }
 
     private func updateMousePassthrough() {

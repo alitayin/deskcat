@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BUILD_DIR="$ROOT_DIR/build"
-APP_DIR="$BUILD_DIR/CatBuddy.app"
+APP_DIR="$BUILD_DIR/Billy.app"
 MACOS_DIR="$APP_DIR/Contents/MacOS"
 RESOURCES_DIR="$APP_DIR/Contents/Resources"
 
@@ -16,7 +16,7 @@ if [[ -d "$ROOT_DIR/assets" ]]; then
 fi
 
 if [[ -f "$ROOT_DIR/assets/app-icon.png" ]]; then
-  ICONSET_DIR="$BUILD_DIR/CatBuddy.iconset"
+  ICONSET_DIR="$BUILD_DIR/Billy.iconset"
   rm -rf "$ICONSET_DIR"
   mkdir -p "$ICONSET_DIR"
   sips -z 16 16 "$ROOT_DIR/assets/app-icon.png" --out "$ICONSET_DIR/icon_16x16.png" >/dev/null
@@ -32,7 +32,7 @@ if [[ -f "$ROOT_DIR/assets/app-icon.png" ]]; then
   HOME=/tmp/swift-home \
   SWIFT_MODULECACHE_PATH=/tmp/swift-module-cache \
   CLANG_MODULE_CACHE_PATH=/tmp/clang-module-cache \
-  swift "$ROOT_DIR/scripts/make_icns.swift" "$ICONSET_DIR" "$RESOURCES_DIR/CatBuddyIcon.icns"
+  swift "$ROOT_DIR/scripts/make_icns.swift" "$ICONSET_DIR" "$RESOURCES_DIR/BillyIcon.icns"
 fi
 
 cat > "$APP_DIR/Contents/Info.plist" <<'PLIST'
@@ -43,15 +43,15 @@ cat > "$APP_DIR/Contents/Info.plist" <<'PLIST'
   <key>CFBundleDevelopmentRegion</key>
   <string>zh_CN</string>
   <key>CFBundleExecutable</key>
-  <string>CatBuddy</string>
+  <string>Billy</string>
   <key>CFBundleIconFile</key>
-  <string>CatBuddyIcon</string>
+  <string>BillyIcon</string>
   <key>CFBundleIdentifier</key>
-  <string>com.alitayin.deskcat</string>
+  <string>com.alitayin.billy</string>
   <key>CFBundleInfoDictionaryVersion</key>
   <string>6.0</string>
   <key>CFBundleName</key>
-  <string>CatBuddy</string>
+  <string>Billy</string>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
@@ -69,7 +69,7 @@ PLIST
 HOME=/tmp/swift-home \
 SWIFT_MODULECACHE_PATH=/tmp/swift-module-cache \
 CLANG_MODULE_CACHE_PATH=/tmp/clang-module-cache \
-swiftc "$ROOT_DIR/CatBuddy.swift" -o "$MACOS_DIR/CatBuddy" -framework Cocoa
+swiftc "$ROOT_DIR/CatBuddy.swift" -o "$MACOS_DIR/Billy" -framework Cocoa
 
 xattr -cr "$APP_DIR" 2>/dev/null || true
 
