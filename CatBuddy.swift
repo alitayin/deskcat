@@ -12,6 +12,8 @@ enum PetAction {
     case stretch
     case walkLeft
     case walkRight
+    case runLeft
+    case runRight
     case groom
     case sleep
 }
@@ -22,10 +24,11 @@ struct PetSpriteFrames {
     let stretch: [NSImage]
     let walkLeft: [NSImage]
     let walkRight: [NSImage]
+    let run: [NSImage]
     let groom: [NSImage]
     let sleep: [NSImage]
 
-    static let empty = PetSpriteFrames(idle: [], observe: [], stretch: [], walkLeft: [], walkRight: [], groom: [], sleep: [])
+    static let empty = PetSpriteFrames(idle: [], observe: [], stretch: [], walkLeft: [], walkRight: [], run: [], groom: [], sleep: [])
 
     func frames(for action: PetAction) -> [NSImage] {
         switch action {
@@ -39,6 +42,8 @@ struct PetSpriteFrames {
             return walkLeft.isEmpty ? walkRight : walkLeft
         case .walkRight:
             return walkRight.isEmpty ? walkLeft : walkRight
+        case .runLeft, .runRight:
+            return run
         case .groom:
             return groom.isEmpty ? idle : groom
         case .sleep:
@@ -47,11 +52,11 @@ struct PetSpriteFrames {
     }
 
     func shouldMirrorFrames(for action: PetAction) -> Bool {
-        action == .walkRight && walkRight.isEmpty && !walkLeft.isEmpty
+        (action == .walkRight && walkRight.isEmpty && !walkLeft.isEmpty) || (action == .runRight && !run.isEmpty)
     }
 
     var hasAny: Bool {
-        !idle.isEmpty || !observe.isEmpty || !stretch.isEmpty || !walkLeft.isEmpty || !walkRight.isEmpty || !groom.isEmpty || !sleep.isEmpty
+        !idle.isEmpty || !observe.isEmpty || !stretch.isEmpty || !walkLeft.isEmpty || !walkRight.isEmpty || !run.isEmpty || !groom.isEmpty || !sleep.isEmpty
     }
 }
 
@@ -110,6 +115,7 @@ func loadPetSprites() -> PetSpriteFrames {
         let stretch = loadSprites(prefix: "lazy", from: directory)
         let walkLeft = loadSprites(prefix: "walk-left", from: directory)
         let walkRight = loadStableWalkSprites(from: directory)
+        let run = loadSprites(prefix: "run", from: directory)
         let groom = loadSprites(prefix: "groom", from: directory)
         let sleep = loadSprites(prefix: "sleep", from: directory)
         let spriteFrames = PetSpriteFrames(
@@ -118,6 +124,7 @@ func loadPetSprites() -> PetSpriteFrames {
             stretch: stretch,
             walkLeft: walkLeft,
             walkRight: walkRight,
+            run: run,
             groom: groom,
             sleep: sleep
         )
@@ -400,7 +407,7 @@ final class PetCanvasView: NSView {
 
     private func spriteDrawSize() -> NSSize {
         switch action {
-        case .walkLeft, .walkRight:
+        case .walkLeft, .walkRight, .runLeft, .runRight:
             return walkSpriteSize
         default:
             return defaultSpriteSize
@@ -411,6 +418,8 @@ final class PetCanvasView: NSView {
         switch action {
         case .walkLeft, .walkRight:
             return frames[timedLoopedIndex(frameCount: frames.count, frameDuration: walkFrameDuration)]
+        case .runLeft, .runRight:
+            return frames[elasticRunFrameIndex(frameCount: frames.count)]
         case .idle, .observe:
             return frames[timedLoopedIndex(frameCount: frames.count, frameDuration: slowFrameDuration)]
         default:
@@ -437,6 +446,58 @@ final class PetCanvasView: NSView {
 
     private func timedLoopedIndex(frameCount: Int, frameDuration: TimeInterval) -> Int {
         timedLoopedIndex(frameCount: frameCount, duration: frameDuration * Double(frameCount))
+    }
+
+    private func elasticRunFrameIndex(frameCount: Int) -> Int {
+        guard frameCount > 1 else {
+            return 0
+        }
+
+        let durations = (0 ..< frameCount).map { elasticRunFrameDuration(index: $0, frameCount: frameCount) }
+        let totalDuration = durations.reduce(0, +)
+        guard totalDuration > 0 else {
+            return 0
+        }
+
+        var elapsed = (ProcessInfo.processInfo.systemUptime - actionStartTime).truncatingRemainder(dividingBy: totalDuration)
+        for (index, duration) in durations.enumerated() {
+            if elapsed < duration {
+                return index
+            }
+            elapsed -= duration
+        }
+        return frameCount - 1
+    }
+
+    private func elasticRunFrameDuration(index: Int, frameCount: Int) -> TimeInterval {
+        let fastest: TimeInterval = 0.2
+        let slowest: TimeInterval = 0.5
+        guard frameCount > 2 else {
+            return slowest
+        }
+
+        let distanceFromCenter: Int
+        let maxDistance: Int
+        if frameCount.isMultiple(of: 2) {
+            let leftCenter = frameCount / 2 - 1
+            let rightCenter = frameCount / 2
+            if index <= leftCenter {
+                distanceFromCenter = leftCenter - index
+            } else {
+                distanceFromCenter = index - rightCenter
+            }
+            maxDistance = max(leftCenter, frameCount - 1 - rightCenter)
+        } else {
+            let center = frameCount / 2
+            distanceFromCenter = abs(index - center)
+            maxDistance = max(center, frameCount - 1 - center)
+        }
+
+        guard maxDistance > 0 else {
+            return fastest
+        }
+        let progress = Double(distanceFromCenter) / Double(maxDistance)
+        return fastest + (slowest - fastest) * progress
     }
 
     private func pingPongIndex(frameCount: Int, pace: Int) -> Int {
@@ -490,6 +551,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private let animationFrameInterval: TimeInterval = 1.0 / 20.0
     private let walkSpeed: CGFloat = 2.7
+    private let runSpeed: CGFloat = 8.4
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         buildWindow()
@@ -576,9 +638,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         updateMousePassthrough()
 
         switch action {
-        case .walkLeft:
-            moveWalkStep()
-        case .walkRight:
+        case .walkLeft, .walkRight, .runLeft, .runRight:
             moveWalkStep()
         default:
             break
@@ -638,8 +698,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } else if roll < 0.50 {
             action = .stretch
             scheduleNextBehavior(after: Double.random(in: 3.2 ... 5.0))
-        } else if roll < 0.76 {
+        } else if roll < 0.68 {
             startWalk()
+        } else if roll < 0.76 {
+            startRun()
         } else if roll < 0.90 {
             action = .groom
             scheduleNextBehavior(after: Double.random(in: 5.0 ... 9.0))
@@ -736,15 +798,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let dx = destination.x - petPosition.x
         let distance = abs(dx)
+        let moveSpeed = currentMoveSpeed()
 
-        if let stopAfter = walkStopAfterDistance, abs(petPosition.x - walkStartX) >= stopAfter, distance > walkSpeed {
+        if let stopAfter = walkStopAfterDistance, abs(petPosition.x - walkStartX) >= stopAfter, distance > moveSpeed {
             clearWalkState()
             action = .idle
             scheduleNextBehavior(after: Double.random(in: 1.2 ... 2.6))
             return
         }
 
-        if distance <= walkSpeed {
+        if distance <= moveSpeed {
             petPosition = clampedPetPosition(destination)
             let edgeTurnDirection = pendingEdgeTurnDirection
             clearWalkState()
@@ -757,8 +820,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        let stepX = (dx >= 0 ? 1 : -1) * walkSpeed
+        let stepX = (dx >= 0 ? 1 : -1) * moveSpeed
         petPosition = clampedPetPosition(NSPoint(x: petPosition.x + stepX, y: destination.y))
+    }
+
+    private func currentMoveSpeed() -> CGFloat {
+        isRunning ? runSpeed : walkSpeed
     }
 
     private func startWalk() {
@@ -803,6 +870,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         pendingEdgeTurnDirection = edgeTurnDirection
         nextWalkDirection = clampedDestination.x >= petPosition.x ? 1 : -1
         action = clampedDestination.x >= petPosition.x ? .walkRight : .walkLeft
+    }
+
+    private func startRun() {
+        let bounds = movementBounds()
+        let current = clampedPetPosition(petPosition)
+        petPosition = current
+
+        let desiredDistance = bounds.width * CGFloat.random(in: 0.60 ... 1.0)
+        let direction = runDirection(from: current, desiredDistance: desiredDistance, in: bounds)
+        let destinationX = clampedX(current.x + direction * desiredDistance, in: bounds)
+        startRun(to: NSPoint(x: destinationX, y: current.y))
+    }
+
+    private func startRun(to destination: NSPoint) {
+        let clampedDestination = clampedPetPosition(destination)
+        walkDestination = clampedDestination
+        walkStartX = petPosition.x
+        walkStopAfterDistance = nil
+        pendingEdgeTurnDirection = nil
+        nextWalkDirection = clampedDestination.x >= petPosition.x ? 1 : -1
+        action = clampedDestination.x >= petPosition.x ? .runRight : .runLeft
     }
 
     private func clearWalkState() {
@@ -863,6 +951,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return distanceToLeft > distanceToRight ? -1 : 1
     }
 
+    private func runDirection(from current: NSPoint, desiredDistance: CGFloat, in bounds: NSRect) -> CGFloat {
+        if current.x <= bounds.minX + 24 {
+            return 1
+        }
+        if current.x >= bounds.maxX - 24 {
+            return -1
+        }
+
+        var direction: CGFloat = Bool.random() ? 1 : -1
+        let availableDistance = direction > 0 ? bounds.maxX - current.x : current.x - bounds.minX
+        let oppositeDistance = direction > 0 ? current.x - bounds.minX : bounds.maxX - current.x
+        if availableDistance < desiredDistance && oppositeDistance > availableDistance {
+            direction *= -1
+        }
+        return direction
+    }
+
     private func randomWalkDistance(minimum: CGFloat, maximum: CGFloat) -> CGFloat {
         let upper = max(minimum, maximum)
         return CGFloat.random(in: minimum ... upper)
@@ -873,7 +978,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private var isWalking: Bool {
-        action == .walkLeft || action == .walkRight
+        action == .walkLeft || action == .walkRight || isRunning
+    }
+
+    private var isRunning: Bool {
+        action == .runLeft || action == .runRight
     }
 
     private func movementBounds() -> NSRect {
