@@ -8,26 +8,25 @@ Use [Billy Reference](/Users/gongdongjie/learn1/native-swift/assets/references/B
 
 ## Required Actions
 
-- `walk-right`: 6 frames
 - `walk-left`: 6 frames
+- `walk-right`: optional; the app mirrors `walk-left` at runtime when no right-facing frames exist
 - `sleep`: 4 frames
-- `idle`: 6 frames
-- `tail`: 6 frames
+- `daze`: 10 frames, 300ms per frame
 - `groom`: 5 frames
 
 ## Import
 
 ```bash
-./import_action_4x4.sh assets/source-sheets/ai-generated/walk-right.png walk-right
+./import_action_4x4.sh assets/source-sheets/ai-generated/daze.png daze
 ```
 
 To select specific cells from the 16 candidates:
 
 ```bash
-./import_action_4x4.sh assets/source-sheets/ai-generated/groom.png groom 1,2,5,6,9,10
+./import_action_4x4.sh assets/source-sheets/ai-generated/groom.png groom 1,2,5,6,9
 ```
 
-The importer writes the action frames into `assets/pet` only after slicing succeeds. It replaces only the selected action, so importing `sleep` does not delete accepted `walk-right` frames.
+The importer writes the action frames into `assets/pet` only after slicing succeeds. It replaces only the selected action, so importing `sleep` does not delete accepted `walk-left` frames.
 
 If a manual source sheet already has a transparent background, keep it as the original master and use it directly for slicing.
 

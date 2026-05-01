@@ -8,7 +8,6 @@ enum PetMode {
 
 enum PetAction {
     case idle
-    case tail
     case walkLeft
     case walkRight
     case groom
@@ -17,20 +16,17 @@ enum PetAction {
 
 struct PetSpriteFrames {
     let idle: [NSImage]
-    let tail: [NSImage]
     let walkLeft: [NSImage]
     let walkRight: [NSImage]
     let groom: [NSImage]
     let sleep: [NSImage]
 
-    static let empty = PetSpriteFrames(idle: [], tail: [], walkLeft: [], walkRight: [], groom: [], sleep: [])
+    static let empty = PetSpriteFrames(idle: [], walkLeft: [], walkRight: [], groom: [], sleep: [])
 
     func frames(for action: PetAction) -> [NSImage] {
         switch action {
         case .idle:
             return idle
-        case .tail:
-            return tail.isEmpty ? idle : tail
         case .walkLeft:
             return walkLeft.isEmpty ? walkRight : walkLeft
         case .walkRight:
@@ -47,7 +43,7 @@ struct PetSpriteFrames {
     }
 
     var hasAny: Bool {
-        !idle.isEmpty || !tail.isEmpty || !walkLeft.isEmpty || !walkRight.isEmpty || !groom.isEmpty || !sleep.isEmpty
+        !idle.isEmpty || !walkLeft.isEmpty || !walkRight.isEmpty || !groom.isEmpty || !sleep.isEmpty
     }
 }
 
@@ -100,15 +96,14 @@ func loadPetSprites() -> PetSpriteFrames {
     searchDirectories.append(currentDirectory.appendingPathComponent("assets/pet", isDirectory: true))
 
     for directory in searchDirectories {
-        let idle = loadSprites(prefix: "idle", from: directory)
-        let tail = loadSprites(prefix: "tail", from: directory)
+        let daze = loadSprites(prefix: "daze", from: directory)
+        let idle = daze.isEmpty ? loadSprites(prefix: "idle", from: directory) : daze
         let walkLeft = loadSprites(prefix: "walk-left", from: directory)
         let walkRight = loadStableWalkSprites(from: directory)
         let groom = loadSprites(prefix: "groom", from: directory)
         let sleep = loadSprites(prefix: "sleep", from: directory)
         let spriteFrames = PetSpriteFrames(
             idle: idle,
-            tail: tail,
             walkLeft: walkLeft,
             walkRight: walkRight,
             groom: groom,
@@ -145,6 +140,7 @@ final class PetCanvasView: NSView {
     private var dragActive = false
     private var pendingSingleTap: DispatchWorkItem?
     private var actionStartTime = ProcessInfo.processInfo.systemUptime
+    private let idleFrameDuration: TimeInterval = 0.3
     private let groomCycleDuration: TimeInterval = 2.5
     private let walkCycleDuration: TimeInterval = 1.8
     private let sleepCycleDuration: TimeInterval = 2.0
@@ -389,10 +385,8 @@ final class PetCanvasView: NSView {
             return frames[timedLoopedIndex(frameCount: frames.count, duration: walkCycleDuration)]
         case .groom:
             return frames[timedLoopedIndex(frameCount: frames.count, duration: groomCycleDuration)]
-        case .tail:
-            return frames[loopedIndex(frameCount: frames.count, pace: 8)]
         case .idle:
-            return frames[loopedIndex(frameCount: frames.count, pace: 10)]
+            return frames[timedLoopedIndex(frameCount: frames.count, duration: idleFrameDuration * Double(frames.count))]
         case .sleep:
             return frames[timedLoopedIndex(frameCount: frames.count, duration: sleepCycleDuration)]
         }
@@ -602,13 +596,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         let roll = Double.random(in: 0 ... 1)
-        if roll < 0.24 {
+        if roll < 0.34 {
             action = .idle
             scheduleNextBehavior(after: Double.random(in: 3.5 ... 5.5))
-        } else if roll < 0.40 {
-            action = .tail
-            scheduleNextBehavior(after: Double.random(in: 3.8 ... 5.8))
-        } else if roll < 0.70 {
+        } else if roll < 0.68 {
             startWalk()
         } else if roll < 0.88 {
             action = .groom
@@ -660,7 +651,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let menu = NSMenu(title: "Billy")
         menu.addItem(withTitle: "自动散步", action: #selector(menuAuto), keyEquivalent: "")
         menu.addItem(withTitle: "发呆", action: #selector(menuIdle), keyEquivalent: "")
-        menu.addItem(withTitle: "甩尾巴", action: #selector(menuTail), keyEquivalent: "")
         menu.addItem(withTitle: "舔爪洗脸", action: #selector(menuGroom), keyEquivalent: "")
         menu.addItem(withTitle: "睡觉", action: #selector(menuSleep), keyEquivalent: "")
         menu.addItem(.separator())
@@ -670,11 +660,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func menuAuto() { setMode(.auto) }
     @objc private func menuIdle() { setMode(.idle) }
-    @objc private func menuTail() {
-        mode = .idle
-        behaviorTimer?.invalidate()
-        action = .tail
-    }
     @objc private func menuGroom() {
         mode = .idle
         behaviorTimer?.invalidate()

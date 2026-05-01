@@ -3,7 +3,7 @@ set -euo pipefail
 
 if [[ $# -lt 2 || $# -gt 3 ]]; then
   echo "Usage: ./import_action_4x4.sh <sprite-sheet.png> <action> [cells]"
-  echo "Actions: walk-right, walk-left, sleep, idle, tail, groom"
+  echo "Actions: walk-right, walk-left, sleep, daze, groom"
   echo "Cells: optional comma-separated 1-based 4x4 cell indexes, e.g. 1,2,5,6,9,10"
   exit 1
 fi
@@ -26,12 +26,12 @@ case "$ACTION" in
   groom)
     FRAME_COUNT=5
     ;;
-  idle|tail)
-    FRAME_COUNT=6
+  daze)
+    FRAME_COUNT=10
     ;;
   *)
     echo "Unsupported action: $ACTION"
-    echo "Actions: walk-right, walk-left, sleep, idle, tail, groom"
+    echo "Actions: walk-right, walk-left, sleep, daze, groom"
     exit 1
     ;;
 esac
