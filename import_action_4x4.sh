@@ -18,7 +18,7 @@ STAGING_DIR="$ROOT_DIR/build/frame-import-staging/$ACTION"
 
 case "$ACTION" in
   walk-right|walk-left)
-    FRAME_COUNT=16
+    FRAME_COUNT=6
     ;;
   sleep)
     FRAME_COUNT=4
