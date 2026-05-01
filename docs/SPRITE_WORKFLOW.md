@@ -13,7 +13,7 @@ Use [Billy Reference](/Users/gongdongjie/learn1/native-swift/assets/references/B
 - `sleep`: 4 frames
 - `idle`: 6 frames
 - `tail`: 6 frames
-- `groom`: 6 frames
+- `groom`: 16 frames
 
 ## Import
 
@@ -28,6 +28,8 @@ To select specific cells from the 16 candidates:
 ```
 
 The importer writes the action frames into `assets/pet` only after slicing succeeds. It replaces only the selected action, so importing `sleep` does not delete accepted `walk-right` frames.
+
+If a manual source sheet already has a transparent background, keep it as the original master and use it directly for slicing.
 
 For each import, inspect the generated contact sheet and individual PNGs before committing:
 

@@ -23,7 +23,10 @@ case "$ACTION" in
   sleep)
     FRAME_COUNT=4
     ;;
-  idle|tail|groom)
+  groom)
+    FRAME_COUNT=16
+    ;;
+  idle|tail)
     FRAME_COUNT=6
     ;;
   *)
