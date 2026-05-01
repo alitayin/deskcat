@@ -8,11 +8,14 @@ MACOS_DIR="$APP_DIR/Contents/MacOS"
 RESOURCES_DIR="$APP_DIR/Contents/Resources"
 
 mkdir -p /tmp/swift-home /tmp/swift-module-cache /tmp/clang-module-cache
+rm -rf "$APP_DIR"
 mkdir -p "$MACOS_DIR" "$RESOURCES_DIR"
 
-if [[ -d "$ROOT_DIR/assets" ]]; then
-  rm -rf "$RESOURCES_DIR/assets"
-  cp -R "$ROOT_DIR/assets" "$RESOURCES_DIR/assets"
+if [[ -d "$ROOT_DIR/assets/pet" ]]; then
+  mkdir -p "$RESOURCES_DIR/assets/pet"
+  for pet_frame in "$ROOT_DIR"/assets/pet/*.png(N); do
+    cp "$pet_frame" "$RESOURCES_DIR/assets/pet/"
+  done
 fi
 
 if [[ -f "$ROOT_DIR/assets/app-icon.png" ]]; then
@@ -48,6 +51,8 @@ cat > "$APP_DIR/Contents/Info.plist" <<'PLIST'
   <string>BillyIcon</string>
   <key>CFBundleIdentifier</key>
   <string>com.alitayin.billy</string>
+  <key>CFBundleDisplayName</key>
+  <string>Billy</string>
   <key>CFBundleInfoDictionaryVersion</key>
   <string>6.0</string>
   <key>CFBundleName</key>
@@ -55,11 +60,15 @@ cat > "$APP_DIR/Contents/Info.plist" <<'PLIST'
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
-  <string>0.1.0</string>
+  <string>0.1.0-beta.1</string>
   <key>CFBundleVersion</key>
-  <string>2</string>
+  <string>3</string>
+  <key>LSApplicationCategoryType</key>
+  <string>public.app-category.entertainment</string>
   <key>LSMinimumSystemVersion</key>
   <string>13.0</string>
+  <key>NSHumanReadableCopyright</key>
+  <string>Copyright © 2026 alitayin. All rights reserved.</string>
   <key>NSHighResolutionCapable</key>
   <true/>
 </dict>
@@ -72,5 +81,6 @@ CLANG_MODULE_CACHE_PATH=/tmp/clang-module-cache \
 swiftc "$ROOT_DIR/CatBuddy.swift" -o "$MACOS_DIR/Billy" -framework Cocoa
 
 xattr -cr "$APP_DIR" 2>/dev/null || true
+codesign --force --deep --sign - "$APP_DIR"
 
 echo "Built: $APP_DIR"

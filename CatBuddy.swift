@@ -2,6 +2,7 @@ import Cocoa
 
 enum PetMode {
     case auto
+    case calm
     case idle
     case sleep
 }
@@ -134,6 +135,68 @@ func loadPetSprites() -> PetSpriteFrames {
     }
 
     return .empty
+}
+
+func runFrameIndex(frameCount: Int, elapsed: TimeInterval) -> Int {
+    guard frameCount > 1 else {
+        return 0
+    }
+
+    let durations = (0 ..< frameCount).map { runFrameDuration(index: $0, frameCount: frameCount) }
+    let totalDuration = durations.reduce(0, +)
+    guard totalDuration > 0 else {
+        return 0
+    }
+
+    var remaining = elapsed.truncatingRemainder(dividingBy: totalDuration)
+    for (index, duration) in durations.enumerated() {
+        if remaining < duration {
+            return index
+        }
+        remaining -= duration
+    }
+    return frameCount - 1
+}
+
+func runFrameDuration(index: Int, frameCount: Int) -> TimeInterval {
+    let fastest: TimeInterval = 0.2
+    let slowest: TimeInterval = 0.5
+    guard frameCount > 2 else {
+        return slowest
+    }
+
+    let distanceFromCenter: Int
+    let maxDistance: Int
+    if frameCount.isMultiple(of: 2) {
+        let leftCenter = frameCount / 2 - 1
+        let rightCenter = frameCount / 2
+        if index <= leftCenter {
+            distanceFromCenter = leftCenter - index
+        } else {
+            distanceFromCenter = index - rightCenter
+        }
+        maxDistance = max(leftCenter, frameCount - 1 - rightCenter)
+    } else {
+        let center = frameCount / 2
+        distanceFromCenter = abs(index - center)
+        maxDistance = max(center, frameCount - 1 - center)
+    }
+
+    guard maxDistance > 0 else {
+        return fastest
+    }
+    let progress = Double(distanceFromCenter) / Double(maxDistance)
+    return fastest + (slowest - fastest) * progress
+}
+
+func averageRunFrameDuration(frameCount: Int) -> TimeInterval {
+    guard frameCount > 0 else {
+        return 0.5
+    }
+    let totalDuration = (0 ..< frameCount).reduce(TimeInterval(0)) { total, index in
+        total + runFrameDuration(index: index, frameCount: frameCount)
+    }
+    return totalDuration / Double(frameCount)
 }
 
 final class PetCanvasView: NSView {
@@ -449,55 +512,10 @@ final class PetCanvasView: NSView {
     }
 
     private func elasticRunFrameIndex(frameCount: Int) -> Int {
-        guard frameCount > 1 else {
-            return 0
-        }
-
-        let durations = (0 ..< frameCount).map { elasticRunFrameDuration(index: $0, frameCount: frameCount) }
-        let totalDuration = durations.reduce(0, +)
-        guard totalDuration > 0 else {
-            return 0
-        }
-
-        var elapsed = (ProcessInfo.processInfo.systemUptime - actionStartTime).truncatingRemainder(dividingBy: totalDuration)
-        for (index, duration) in durations.enumerated() {
-            if elapsed < duration {
-                return index
-            }
-            elapsed -= duration
-        }
-        return frameCount - 1
-    }
-
-    private func elasticRunFrameDuration(index: Int, frameCount: Int) -> TimeInterval {
-        let fastest: TimeInterval = 0.2
-        let slowest: TimeInterval = 0.5
-        guard frameCount > 2 else {
-            return slowest
-        }
-
-        let distanceFromCenter: Int
-        let maxDistance: Int
-        if frameCount.isMultiple(of: 2) {
-            let leftCenter = frameCount / 2 - 1
-            let rightCenter = frameCount / 2
-            if index <= leftCenter {
-                distanceFromCenter = leftCenter - index
-            } else {
-                distanceFromCenter = index - rightCenter
-            }
-            maxDistance = max(leftCenter, frameCount - 1 - rightCenter)
-        } else {
-            let center = frameCount / 2
-            distanceFromCenter = abs(index - center)
-            maxDistance = max(center, frameCount - 1 - center)
-        }
-
-        guard maxDistance > 0 else {
-            return fastest
-        }
-        let progress = Double(distanceFromCenter) / Double(maxDistance)
-        return fastest + (slowest - fastest) * progress
+        runFrameIndex(
+            frameCount: frameCount,
+            elapsed: ProcessInfo.processInfo.systemUptime - actionStartTime
+        )
     }
 
     private func pingPongIndex(frameCount: Int, pace: Int) -> Int {
@@ -524,10 +542,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var userIsInteracting = false
 
     private var mode: PetMode = .auto
+    private var actionStartTime = ProcessInfo.processInfo.systemUptime
     private var action: PetAction = .idle {
         didSet {
             if oldValue != action {
                 frameTick = 0
+                actionStartTime = ProcessInfo.processInfo.systemUptime
             }
             petView?.action = action
         }
@@ -662,7 +682,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         clearWalkState()
 
         switch nextMode {
-        case .auto:
+        case .auto, .calm:
             action = .idle
             scheduleNextBehavior(after: Double.random(in: 2.2 ... 4.2))
         case .idle:
@@ -674,7 +694,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func scheduleNextBehavior(after delay: TimeInterval) {
         behaviorTimer?.invalidate()
-        guard mode == .auto else {
+        guard isAutonomousMode else {
             return
         }
 
@@ -684,31 +704,47 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func chooseRandomBehavior() {
-        guard mode == .auto else {
+        guard isAutonomousMode else {
             return
         }
 
-        let roll = Double.random(in: 0 ... 1)
-        if roll < 0.26 {
-            action = .idle
-            scheduleNextBehavior(after: Double.random(in: 3.5 ... 5.5))
-        } else if roll < 0.44 {
-            action = .observe
-            scheduleNextBehavior(after: Double.random(in: 4.2 ... 6.8))
-        } else if roll < 0.50 {
-            action = .stretch
-            scheduleNextBehavior(after: Double.random(in: 3.2 ... 5.0))
-        } else if roll < 0.68 {
-            startWalk()
-        } else if roll < 0.76 {
-            startRun()
-        } else if roll < 0.90 {
-            action = .groom
-            scheduleNextBehavior(after: Double.random(in: 5.0 ... 9.0))
-        } else {
-            action = .sleep
-            scheduleNextBehavior(after: Double.random(in: 7.0 ... 12.0))
+        let movementScale = mode == .calm ? 0.3 : 1.0
+        let behaviors: [(weight: Double, perform: () -> Void)] = [
+            (0.26, { [weak self] in
+                self?.action = .idle
+                self?.scheduleNextBehavior(after: Double.random(in: 3.5 ... 5.5))
+            }),
+            (0.18, { [weak self] in
+                self?.action = .observe
+                self?.scheduleNextBehavior(after: Double.random(in: 4.2 ... 6.8))
+            }),
+            (0.06, { [weak self] in
+                self?.action = .stretch
+                self?.scheduleNextBehavior(after: Double.random(in: 3.2 ... 5.0))
+            }),
+            (0.18 * movementScale, { [weak self] in self?.startWalk() }),
+            (0.08 * movementScale, { [weak self] in self?.startRun() }),
+            (0.14, { [weak self] in
+                self?.action = .groom
+                self?.scheduleNextBehavior(after: Double.random(in: 5.0 ... 9.0))
+            }),
+            (0.10, { [weak self] in
+                self?.action = .sleep
+                self?.scheduleNextBehavior(after: Double.random(in: 7.0 ... 12.0))
+            })
+        ]
+        let totalWeight = behaviors.reduce(0) { $0 + $1.weight }
+        var roll = Double.random(in: 0 ..< totalWeight)
+        for behavior in behaviors {
+            roll -= behavior.weight
+            if roll <= 0 {
+                behavior.perform()
+                return
+            }
         }
+
+        action = .idle
+        scheduleNextBehavior(after: Double.random(in: 3.5 ... 5.5))
     }
 
     private func handleTap() {
@@ -720,7 +756,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func shooPet(from clickPoint: NSPoint) {
-        mode = .auto
+        if !isAutonomousMode {
+            mode = .auto
+        }
         behaviorTimer?.invalidate()
         clearWalkState()
 
@@ -749,19 +787,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func showContextMenu() {
-        let menu = NSMenu(title: "Billy")
-        menu.addItem(withTitle: "自动散步", action: #selector(menuAuto), keyEquivalent: "")
-        menu.addItem(withTitle: "发呆", action: #selector(menuIdle), keyEquivalent: "")
-        menu.addItem(withTitle: "观察", action: #selector(menuObserve), keyEquivalent: "")
-        menu.addItem(withTitle: "伸懒腰", action: #selector(menuStretch), keyEquivalent: "")
-        menu.addItem(withTitle: "舔爪洗脸", action: #selector(menuGroom), keyEquivalent: "")
-        menu.addItem(withTitle: "睡觉", action: #selector(menuSleep), keyEquivalent: "")
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+
+        let autoItem = NSMenuItem(title: "自由活动", action: #selector(menuAuto), keyEquivalent: "")
+        autoItem.target = self
+        menu.addItem(autoItem)
+
+        let calmItem = NSMenuItem(title: "求你别动", action: #selector(menuCalm), keyEquivalent: "")
+        calmItem.target = self
+        menu.addItem(calmItem)
+
         menu.addItem(.separator())
-        menu.addItem(withTitle: "退出", action: #selector(menuQuit), keyEquivalent: "")
-        NSMenu.popUpContextMenu(menu, with: NSApp.currentEvent!, for: petView)
+
+        let quitItem = NSMenuItem(title: "退出", action: #selector(menuQuit), keyEquivalent: "")
+        quitItem.target = self
+        menu.addItem(quitItem)
+
+        let popupPoint: NSPoint
+        if let event = NSApp.currentEvent {
+            popupPoint = petView.convert(event.locationInWindow, from: nil)
+        } else {
+            popupPoint = NSPoint(x: petPosition.x, y: petPosition.y + 60)
+        }
+        menu.popUp(positioning: nil, at: popupPoint, in: petView)
+        updateMousePassthrough()
     }
 
     @objc private func menuAuto() { setMode(.auto) }
+    @objc private func menuCalm() { setMode(.calm) }
     @objc private func menuIdle() { setMode(.idle) }
     @objc private func menuObserve() {
         mode = .idle
@@ -774,6 +828,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         behaviorTimer?.invalidate()
         clearWalkState()
         action = .stretch
+    }
+    @objc private func menuRun() {
+        mode = .idle
+        behaviorTimer?.invalidate()
+        clearWalkState()
+        startRun()
     }
     @objc private func menuGroom() {
         mode = .idle
@@ -812,7 +872,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let edgeTurnDirection = pendingEdgeTurnDirection
             clearWalkState()
             action = .idle
-            if let edgeTurnDirection, mode == .auto {
+            if let edgeTurnDirection, isAutonomousMode {
                 scheduleEdgeTurn(direction: edgeTurnDirection, after: Double.random(in: 0.45 ... 1.1))
             } else {
                 scheduleNextBehavior(after: Double.random(in: 0.8 ... 1.6))
@@ -825,7 +885,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func currentMoveSpeed() -> CGFloat {
-        isRunning ? runSpeed : walkSpeed
+        guard isRunning else {
+            return walkSpeed
+        }
+        return runSpeed * currentRunMovementScale()
+    }
+
+    private func currentRunMovementScale() -> CGFloat {
+        let frameCount = petView.spriteFrames.frames(for: action).count
+        guard frameCount > 1 else {
+            return 1
+        }
+
+        let elapsed = ProcessInfo.processInfo.systemUptime - actionStartTime
+        let frameIndex = runFrameIndex(frameCount: frameCount, elapsed: elapsed)
+        let currentDuration = runFrameDuration(index: frameIndex, frameCount: frameCount)
+        guard currentDuration > 0 else {
+            return 1
+        }
+
+        return CGFloat(averageRunFrameDuration(frameCount: frameCount) / currentDuration)
     }
 
     private func startWalk() {
@@ -901,7 +980,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func scheduleEdgeTurn(direction: CGFloat, after delay: TimeInterval) {
         behaviorTimer?.invalidate()
-        guard mode == .auto else {
+        guard isAutonomousMode else {
             return
         }
 
@@ -911,7 +990,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func startWalkAwayFromEdge(direction: CGFloat) {
-        guard mode == .auto else {
+        guard isAutonomousMode else {
             return
         }
 
@@ -979,6 +1058,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var isWalking: Bool {
         action == .walkLeft || action == .walkRight || isRunning
+    }
+
+    private var isAutonomousMode: Bool {
+        mode == .auto || mode == .calm
     }
 
     private var isRunning: Bool {
