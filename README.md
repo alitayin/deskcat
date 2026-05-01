@@ -48,6 +48,17 @@ cd native-swift
 - 左键拖动可在接近全屏范围内换位置
 - 右键菜单支持：自动散步、发呆、甩尾巴、舔爪洗脸、睡觉、退出
 
+## 动画素材
+
+动画素材统一使用 `4x4` sprite sheet 导入：
+
+```bash
+cd native-swift
+./import_action_4x4.sh assets/source-sheets/ai-generated/walk-right.png walk-right
+```
+
+详细规则见 [docs/SPRITE_WORKFLOW.md](/Users/gongdongjie/learn1/native-swift/docs/SPRITE_WORKFLOW.md)。
+
 ## 说明
 
 当前代码层已经移除自动说话和“回窝”入口。素材会在后续阶段全部重新生成。
