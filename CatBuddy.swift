@@ -147,6 +147,7 @@ final class PetCanvasView: NSView {
     private var actionStartTime = ProcessInfo.processInfo.systemUptime
     private let groomCycleDuration: TimeInterval = 2.5
     private let walkCycleDuration: TimeInterval = 1.8
+    private let sleepCycleDuration: TimeInterval = 2.0
 
     override var isOpaque: Bool { false }
 
@@ -393,7 +394,7 @@ final class PetCanvasView: NSView {
         case .idle:
             return frames[loopedIndex(frameCount: frames.count, pace: 10)]
         case .sleep:
-            return frames[loopedIndex(frameCount: frames.count, pace: 12)]
+            return frames[timedLoopedIndex(frameCount: frames.count, duration: sleepCycleDuration)]
         }
     }
 
