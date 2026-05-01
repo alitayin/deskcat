@@ -11,12 +11,12 @@ Use [Billy Reference](/Users/gongdongjie/learn1/native-swift/assets/references/B
 - `walk-left`: 6 frames
 - `walk-right`: optional; the app mirrors `walk-left` at runtime when no right-facing frames exist
 - `sleep`: 4 frames, 500ms per frame
-- `daze`: 10 frames, 500ms per frame
-- `look`: 11 frames, 500ms per frame; shown as `观察` in the app
+- `daze`: 10 frames, 800ms per frame
+- `look`: 11 frames, 800ms per frame; shown as `观察` in the app
 - `lazy`: 8 frames, 500ms per frame; shown as `伸懒腰` in the app
 - `groom`: 5 frames, 500ms per frame
 
-Runtime display size is `200 x 200` for walking and `160 x 160` for every other action. Walking plays at 300ms per frame; every other action plays at 500ms per frame.
+Runtime display size and mouse hit area are `200 x 200` for walking and `160 x 160` for every other action. Walking plays at 300ms per frame; `daze` and `look` play at 800ms per frame; every other action plays at 500ms per frame.
 
 ## Import
 

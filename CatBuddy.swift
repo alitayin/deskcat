@@ -155,16 +155,23 @@ final class PetCanvasView: NSView {
     private let defaultSpriteSize = NSSize(width: 160, height: 160)
     private let walkSpriteSize = NSSize(width: 200, height: 200)
     private let defaultFrameDuration: TimeInterval = 0.5
+    private let slowFrameDuration: TimeInterval = 0.8
     private let walkFrameDuration: TimeInterval = 0.3
 
     override var isOpaque: Bool { false }
 
     private var interactionRect: NSRect {
-        NSRect(x: petPosition.x - 110, y: petPosition.y, width: 220, height: 220)
+        let size = spriteDrawSize()
+        return NSRect(
+            x: petPosition.x - (size.width / 2),
+            y: petPosition.y,
+            width: size.width,
+            height: size.height
+        )
     }
 
     func containsInteractivePoint(_ point: NSPoint) -> Bool {
-        interactionRect.insetBy(dx: -10, dy: -10).contains(point)
+        interactionRect.contains(point)
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
@@ -404,6 +411,8 @@ final class PetCanvasView: NSView {
         switch action {
         case .walkLeft, .walkRight:
             return frames[timedLoopedIndex(frameCount: frames.count, frameDuration: walkFrameDuration)]
+        case .idle, .observe:
+            return frames[timedLoopedIndex(frameCount: frames.count, frameDuration: slowFrameDuration)]
         default:
             return frames[timedLoopedIndex(frameCount: frames.count, frameDuration: defaultFrameDuration)]
         }
@@ -468,6 +477,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
     private var walkDestination: NSPoint?
+    private var walkStartX: CGFloat = 0
+    private var walkStopAfterDistance: CGFloat?
+    private var pendingEdgeTurnDirection: CGFloat?
     private var nextWalkDirection: CGFloat = 1
     private var petPosition = NSPoint(x: 110, y: 120) {
         didSet {
@@ -575,7 +587,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func dragPet(delta: NSSize) {
         if isWalking {
-            walkDestination = nil
+            clearWalkState()
             action = .idle
             scheduleNextBehavior(after: Double.random(in: 2.0 ... 3.2))
         }
@@ -587,7 +599,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func setMode(_ nextMode: PetMode) {
         mode = nextMode
         behaviorTimer?.invalidate()
-        walkDestination = nil
+        clearWalkState()
 
         switch nextMode {
         case .auto:
@@ -617,13 +629,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         let roll = Double.random(in: 0 ... 1)
-        if roll < 0.24 {
+        if roll < 0.26 {
             action = .idle
             scheduleNextBehavior(after: Double.random(in: 3.5 ... 5.5))
-        } else if roll < 0.40 {
+        } else if roll < 0.44 {
             action = .observe
             scheduleNextBehavior(after: Double.random(in: 4.2 ... 6.8))
-        } else if roll < 0.54 {
+        } else if roll < 0.50 {
             action = .stretch
             scheduleNextBehavior(after: Double.random(in: 3.2 ... 5.0))
         } else if roll < 0.76 {
@@ -639,7 +651,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func handleTap() {
         if isWalking {
-            walkDestination = nil
+            clearWalkState()
             action = .idle
             scheduleNextBehavior(after: Double.random(in: 2.0 ... 3.2))
         }
@@ -648,7 +660,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func shooPet(from clickPoint: NSPoint) {
         mode = .auto
         behaviorTimer?.invalidate()
-        walkDestination = nil
+        clearWalkState()
 
         let bounds = movementBounds()
         let current = clampedPetPosition(petPosition)
@@ -692,19 +704,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func menuObserve() {
         mode = .idle
         behaviorTimer?.invalidate()
-        walkDestination = nil
+        clearWalkState()
         action = .observe
     }
     @objc private func menuStretch() {
         mode = .idle
         behaviorTimer?.invalidate()
-        walkDestination = nil
+        clearWalkState()
         action = .stretch
     }
     @objc private func menuGroom() {
         mode = .idle
         behaviorTimer?.invalidate()
-        walkDestination = nil
+        clearWalkState()
         action = .groom
     }
     @objc private func menuSleep() { setMode(.sleep) }
@@ -716,6 +728,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func moveWalkStep() {
         guard let destination = walkDestination else {
+            clearWalkState()
             action = .idle
             scheduleNextBehavior(after: Double.random(in: 2.8 ... 5.0))
             return
@@ -724,11 +737,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let dx = destination.x - petPosition.x
         let distance = abs(dx)
 
+        if let stopAfter = walkStopAfterDistance, abs(petPosition.x - walkStartX) >= stopAfter, distance > walkSpeed {
+            clearWalkState()
+            action = .idle
+            scheduleNextBehavior(after: Double.random(in: 1.2 ... 2.6))
+            return
+        }
+
         if distance <= walkSpeed {
             petPosition = clampedPetPosition(destination)
-            walkDestination = nil
+            let edgeTurnDirection = pendingEdgeTurnDirection
+            clearWalkState()
             action = .idle
-            scheduleNextBehavior(after: Double.random(in: 0.8 ... 1.6))
+            if let edgeTurnDirection, mode == .auto {
+                scheduleEdgeTurn(direction: edgeTurnDirection, after: Double.random(in: 0.45 ... 1.1))
+            } else {
+                scheduleNextBehavior(after: Double.random(in: 0.8 ... 1.6))
+            }
             return
         }
 
@@ -740,24 +765,111 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let bounds = movementBounds()
         let current = clampedPetPosition(petPosition)
         petPosition = current
-        var direction = nextWalkDirection
-        if current.x <= bounds.minX + 24 {
-            direction = 1
-        } else if current.x >= bounds.maxX - 24 {
-            direction = -1
+        let direction = randomWalkDirection(from: current, in: bounds)
+        let roll = Double.random(in: 0 ... 1)
+
+        if roll < 0.45 {
+            let distance = randomWalkDistance(minimum: 260, maximum: min(760, bounds.width * 0.58))
+            startWalk(to: NSPoint(x: clampedX(current.x + direction * distance, in: bounds), y: current.y))
+        } else if roll < 0.65 {
+            let distance = randomWalkDistance(minimum: 90, maximum: min(260, bounds.width * 0.28))
+            startWalk(to: NSPoint(x: clampedX(current.x + direction * distance, in: bounds), y: current.y))
+        } else if roll < 0.90 {
+            let edgeDirection = edgeWalkDirection(from: current, preferredDirection: direction, in: bounds)
+            let destinationX = edgeDirection > 0 ? bounds.maxX : bounds.minX
+            startWalk(
+                to: NSPoint(x: destinationX, y: current.y),
+                edgeTurnDirection: -edgeDirection
+            )
+        } else {
+            let distance = randomWalkDistance(minimum: 300, maximum: min(720, bounds.width * 0.55))
+            let stopAfter = randomWalkDistance(minimum: 90, maximum: min(240, distance * 0.62))
+            startWalk(
+                to: NSPoint(x: clampedX(current.x + direction * distance, in: bounds), y: current.y),
+                stopAfterDistance: stopAfter
+            )
         }
-        let maxHorizontalDistance = max(320, min(900, bounds.width * 0.72))
-        let minHorizontalDistance = min(320, maxHorizontalDistance)
-        let desiredDistance = CGFloat.random(in: minHorizontalDistance ... maxHorizontalDistance)
-        let destinationX = min(max(current.x + (direction * desiredDistance), bounds.minX), bounds.maxX)
-        nextWalkDirection = -direction
+    }
+
+    private func startWalk(
+        to destination: NSPoint,
+        stopAfterDistance: CGFloat? = nil,
+        edgeTurnDirection: CGFloat? = nil
+    ) {
+        let clampedDestination = clampedPetPosition(destination)
+        walkDestination = clampedDestination
+        walkStartX = petPosition.x
+        walkStopAfterDistance = stopAfterDistance
+        pendingEdgeTurnDirection = edgeTurnDirection
+        nextWalkDirection = clampedDestination.x >= petPosition.x ? 1 : -1
+        action = clampedDestination.x >= petPosition.x ? .walkRight : .walkLeft
+    }
+
+    private func clearWalkState() {
+        walkDestination = nil
+        walkStopAfterDistance = nil
+        pendingEdgeTurnDirection = nil
+    }
+
+    private func scheduleEdgeTurn(direction: CGFloat, after delay: TimeInterval) {
+        behaviorTimer?.invalidate()
+        guard mode == .auto else {
+            return
+        }
+
+        behaviorTimer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
+            self?.startWalkAwayFromEdge(direction: direction)
+        }
+    }
+
+    private func startWalkAwayFromEdge(direction: CGFloat) {
+        guard mode == .auto else {
+            return
+        }
+
+        let bounds = movementBounds()
+        let current = clampedPetPosition(petPosition)
+        petPosition = current
+        let distance = randomWalkDistance(minimum: 180, maximum: min(520, bounds.width * 0.42))
+        let destinationX = clampedX(current.x + direction * distance, in: bounds)
         startWalk(to: NSPoint(x: destinationX, y: current.y))
     }
 
-    private func startWalk(to destination: NSPoint) {
-        let clampedDestination = clampedPetPosition(destination)
-        walkDestination = clampedDestination
-        action = clampedDestination.x >= petPosition.x ? .walkRight : .walkLeft
+    private func randomWalkDirection(from current: NSPoint, in bounds: NSRect) -> CGFloat {
+        if current.x <= bounds.minX + 24 {
+            return 1
+        }
+        if current.x >= bounds.maxX - 24 {
+            return -1
+        }
+        if Double.random(in: 0 ... 1) < 0.35 {
+            return nextWalkDirection
+        }
+        return Bool.random() ? 1 : -1
+    }
+
+    private func edgeWalkDirection(from current: NSPoint, preferredDirection: CGFloat, in bounds: NSRect) -> CGFloat {
+        let distanceToLeft = current.x - bounds.minX
+        let distanceToRight = bounds.maxX - current.x
+        if distanceToLeft < 60 {
+            return 1
+        }
+        if distanceToRight < 60 {
+            return -1
+        }
+        if Double.random(in: 0 ... 1) < 0.65 {
+            return preferredDirection
+        }
+        return distanceToLeft > distanceToRight ? -1 : 1
+    }
+
+    private func randomWalkDistance(minimum: CGFloat, maximum: CGFloat) -> CGFloat {
+        let upper = max(minimum, maximum)
+        return CGFloat.random(in: minimum ... upper)
+    }
+
+    private func clampedX(_ x: CGFloat, in bounds: NSRect) -> CGFloat {
+        min(max(x, bounds.minX), bounds.maxX)
     }
 
     private var isWalking: Bool {
