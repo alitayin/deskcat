@@ -78,20 +78,29 @@ func loadSprites(prefix: String, from directory: URL) -> [NSImage] {
 func loadStableWalkSprites(from directory: URL) -> [NSImage] {
     let explicitRightFacing = loadSprites(prefix: "walk-right", from: directory)
     if !explicitRightFacing.isEmpty {
-        return explicitRightFacing
+        return pingPongFrames(explicitRightFacing)
     }
 
     let allWalkFrames = loadSprites(prefix: "walk", from: directory)
     guard allWalkFrames.count >= 8 else {
-        return allWalkFrames
+        return pingPongFrames(allWalkFrames)
     }
 
     // The first generated sheet mixed left-facing and right-facing poses.
     // Keep only the right-facing cells, then mirror them in code for left walks.
     let stableRightFacingIndexes = [2, 3, 4, 7]
-    return stableRightFacingIndexes.compactMap { index in
+    let stableFrames = stableRightFacingIndexes.compactMap { index in
         index < allWalkFrames.count ? allWalkFrames[index] : nil
     }
+    return pingPongFrames(stableFrames)
+}
+
+func pingPongFrames(_ frames: [NSImage]) -> [NSImage] {
+    guard frames.count > 2 else {
+        return frames
+    }
+
+    return frames + frames.dropLast().dropFirst().reversed()
 }
 
 func loadPetSprites() -> PetSpriteFrames {
@@ -395,8 +404,8 @@ final class PetCanvasView: NSView {
             height: 20
         )).fill()
 
-        let image = isWalking ? stableWalkFrame(for: frames) : spriteFrame(for: frames)
-        let bob = isWalking ? sin(walkPhase()) * 4 : 0
+        let image = spriteFrame(for: frames)
+        let bob = isWalking ? sin(walkPhase()) * 2 : 0
         let size = action == .sleep ? NSSize(width: 184, height: 134) : NSSize(width: 180, height: 138)
         let rect = NSRect(
             x: petPosition.x - (size.width / 2),
@@ -406,15 +415,8 @@ final class PetCanvasView: NSView {
         )
 
         if isWalking {
-            let phase = walkPhase()
-            let tilt = sin(phase) * 0.035
-            let stretchX = 1 + cos(phase * 2) * 0.018
-            let stretchY = 1 - cos(phase * 2) * 0.012
-
             ctx.saveGState()
             ctx.translateBy(x: rect.midX, y: rect.midY)
-            ctx.rotate(by: action == .walkLeft ? -tilt : tilt)
-            ctx.scaleBy(x: stretchX, y: stretchY)
             if action == .walkLeft {
                 ctx.scaleBy(x: -1, y: 1)
             }
@@ -432,12 +434,8 @@ final class PetCanvasView: NSView {
         return true
     }
 
-    private func stableWalkFrame(for frames: [NSImage]) -> NSImage {
-        frames[min(1, frames.count - 1)]
-    }
-
     private func walkPhase() -> CGFloat {
-        CGFloat(frameTick % 40) / 40 * CGFloat.pi * 2
+        CGFloat(frameTick % 80) / 80 * CGFloat.pi * 2
     }
 
     private func spriteFrame(for frames: [NSImage]) -> NSImage {
@@ -445,15 +443,15 @@ final class PetCanvasView: NSView {
         case .idle:
             return frames[loopedIndex(frameCount: frames.count, pace: 10)]
         case .lookAround:
-            return frames[pingPongIndex(frameCount: frames.count, pace: 8)]
+            return frames[pingPongIndex(frameCount: frames.count, pace: 18)]
         case .walkLeft, .walkRight:
-            return frames[loopedIndex(frameCount: frames.count, pace: 2)]
+            return frames[loopedIndex(frameCount: frames.count, pace: 5)]
         case .groom:
-            return frames[pingPongIndex(frameCount: frames.count, pace: 3)]
+            return frames[pingPongIndex(frameCount: frames.count, pace: 12)]
         case .stretch:
-            return frames[pingPongIndex(frameCount: frames.count, pace: 5)]
+            return frames[pingPongIndex(frameCount: frames.count, pace: 16)]
         case .sleep:
-            return frames[pingPongIndex(frameCount: frames.count, pace: 10)]
+            return frames[pingPongIndex(frameCount: frames.count, pace: 24)]
         }
     }
 
@@ -508,6 +506,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
     private var walkDestination: NSPoint?
+    private var walkReturnDestination: NSPoint?
     private var petPosition = NSPoint(x: 110, y: 120) {
         didSet {
             petView?.petPosition = petPosition
@@ -516,7 +515,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private let walkSpeed: CGFloat = 5.5
+    private let walkSpeed: CGFloat = 3.2
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         buildWindow()
@@ -587,7 +586,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func startAnimationLoop() {
-        animationTimer = Timer.scheduledTimer(withTimeInterval: 0.04, repeats: true) { [weak self] _ in
+        animationTimer = Timer.scheduledTimer(withTimeInterval: 0.06, repeats: true) { [weak self] _ in
             self?.tick()
         }
     }
@@ -621,6 +620,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         mode = nextMode
         behaviorTimer?.invalidate()
         walkDestination = nil
+        walkReturnDestination = nil
 
         switch nextMode {
         case .auto:
@@ -658,7 +658,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             action = .lookAround
             maybeAutoMeow(chance: 0.08)
             scheduleNextBehavior(after: Double.random(in: 3.8 ... 5.8))
-        } else if roll < 0.60 {
+        } else if roll < 0.68 {
             startWalk()
         } else if roll < 0.78 {
             action = .groom
@@ -753,8 +753,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if distance <= walkSpeed {
             petPosition = destination
             walkDestination = nil
-            action = Bool.random() ? .lookAround : .groom
-            scheduleNextBehavior(after: Double.random(in: 3.8 ... 6.8))
+
+            if let returnDestination = walkReturnDestination {
+                walkReturnDestination = nil
+                action = .idle
+                scheduleReturnWalk(to: returnDestination)
+            } else {
+                action = .idle
+                scheduleNextBehavior(after: Double.random(in: 3.8 ... 6.8))
+            }
             return
         }
 
@@ -778,21 +785,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             preferRight = Bool.random()
         }
 
-        let maxHorizontalDistance = max(320, min(980, bounds.width * 0.85))
+        let maxHorizontalDistance = max(320, min(900, bounds.width * 0.72))
         let minHorizontalDistance = min(320, maxHorizontalDistance)
         let desiredDistance = CGFloat.random(in: minHorizontalDistance ... maxHorizontalDistance)
-        let destinationY = CGFloat.random(in: bounds.minY ... bounds.maxY)
+        let destinationY = current.y
 
         if preferRight {
             let travel = min(desiredDistance, availableRight)
             let destinationX = min(current.x + max(220, travel), bounds.maxX)
-            walkDestination = NSPoint(x: destinationX, y: destinationY)
-            action = .walkRight
+            startWalk(to: NSPoint(x: destinationX, y: destinationY), returnTo: current)
         } else {
             let travel = min(desiredDistance, availableLeft)
             let destinationX = max(current.x - max(220, travel), bounds.minX)
-            walkDestination = NSPoint(x: destinationX, y: destinationY)
-            action = .walkLeft
+            startWalk(to: NSPoint(x: destinationX, y: destinationY), returnTo: current)
+        }
+    }
+
+    private func startWalk(to destination: NSPoint, returnTo returnDestination: NSPoint? = nil) {
+        let clampedDestination = clampedPetPosition(destination)
+        walkDestination = clampedDestination
+        walkReturnDestination = returnDestination
+        action = clampedDestination.x >= petPosition.x ? .walkRight : .walkLeft
+    }
+
+    private func scheduleReturnWalk(to destination: NSPoint) {
+        behaviorTimer?.invalidate()
+        guard mode == .auto else {
+            return
+        }
+
+        behaviorTimer = Timer.scheduledTimer(withTimeInterval: 0.9, repeats: false) { [weak self] _ in
+            guard let self = self, self.mode == .auto else {
+                return
+            }
+            self.startWalk(to: destination)
         }
     }
 
