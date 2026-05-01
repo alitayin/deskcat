@@ -32,7 +32,9 @@ cd native-swift
 ./package-dmg.sh
 ```
 
-会生成：
+脚本会先按最新代码重新编译 `build/Billy.app`，再重新生成 DMG。
+
+每次运行都会覆盖旧的：
 
 - [build/Billy.dmg](/Users/gongdongjie/learn1/native-swift/build/Billy.dmg)
 
