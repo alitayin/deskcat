@@ -8,8 +8,8 @@ Use [Billy Reference](/Users/gongdongjie/learn1/native-swift/assets/references/B
 
 ## Required Actions
 
-- `walk-right`: 10 frames
-- `walk-left`: 10 frames
+- `walk-right`: 16 frames
+- `walk-left`: 16 frames
 - `sleep`: 4 frames
 - `idle`: 6 frames
 - `tail`: 6 frames

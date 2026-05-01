@@ -77,36 +77,11 @@ func loadSprites(prefix: String, from directory: URL) -> [NSImage] {
 func loadStableWalkSprites(from directory: URL) -> [NSImage] {
     let explicitRightFacing = loadSprites(prefix: "walk-right", from: directory)
     if !explicitRightFacing.isEmpty {
-        if explicitRightFacing.count >= 8 {
-            return explicitRightFacing
-        }
-        return curatedRightWalkFrames(explicitRightFacing)
+        return explicitRightFacing
     }
 
     let allWalkFrames = loadSprites(prefix: "walk", from: directory)
-    if allWalkFrames.count >= 8 {
-        return allWalkFrames
-    }
-    guard allWalkFrames.count >= 8 else {
-        return curatedRightWalkFrames(allWalkFrames)
-    }
-
-    // The first generated sheet mixed left-facing and right-facing poses.
-    // Keep only the right-facing cells, then mirror them in code for left walks.
-    let stableRightFacingIndexes = [2, 3, 4, 7]
-    return stableRightFacingIndexes.compactMap { index in
-        index < allWalkFrames.count ? allWalkFrames[index] : nil
-    }
-}
-
-func curatedRightWalkFrames(_ frames: [NSImage]) -> [NSImage] {
-    guard frames.count >= 3 else {
-        return frames
-    }
-
-    // The generated walk set contains direction and scale drift.
-    // These two cells are the closest in pose and both face the same way.
-    return [frames[1], frames[2]]
+    return allWalkFrames
 }
 
 func loadPetSprites() -> PetSpriteFrames {
@@ -167,6 +142,7 @@ final class PetCanvasView: NSView {
     private var pendingSingleTap: DispatchWorkItem?
     private var actionStartTime = ProcessInfo.processInfo.systemUptime
     private let groomCycleDuration: TimeInterval = 1.2
+    private let walkCycleDuration: TimeInterval = 2.0
 
     override var isOpaque: Bool { false }
 
@@ -390,22 +366,14 @@ final class PetCanvasView: NSView {
             height: size.height
         )
 
-        if action == .walkLeft {
-            ctx.saveGState()
-            ctx.translateBy(x: rect.midX, y: rect.midY)
-            ctx.scaleBy(x: -1, y: 1)
-            image.draw(in: NSRect(x: -rect.width / 2, y: -rect.height / 2, width: rect.width, height: rect.height))
-            ctx.restoreGState()
-        } else {
-            image.draw(in: rect)
-        }
+        image.draw(in: rect)
         return true
     }
 
     private func spriteFrame(for frames: [NSImage]) -> NSImage {
         switch action {
         case .walkLeft, .walkRight:
-            return frames[loopedIndex(frameCount: frames.count, pace: 3)]
+            return frames[timedLoopedIndex(frameCount: frames.count, duration: walkCycleDuration)]
         case .groom:
             return frames[timedLoopedIndex(frameCount: frames.count, duration: groomCycleDuration)]
         case .tail:
