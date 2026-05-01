@@ -142,7 +142,7 @@ final class PetCanvasView: NSView {
     private var pendingSingleTap: DispatchWorkItem?
     private var actionStartTime = ProcessInfo.processInfo.systemUptime
     private let groomCycleDuration: TimeInterval = 2.5
-    private let walkCycleDuration: TimeInterval = 3.0
+    private let walkCycleDuration: TimeInterval = 1.8
 
     override var isOpaque: Bool { false }
 
