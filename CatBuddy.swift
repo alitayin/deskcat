@@ -78,29 +78,30 @@ func loadSprites(prefix: String, from directory: URL) -> [NSImage] {
 func loadStableWalkSprites(from directory: URL) -> [NSImage] {
     let explicitRightFacing = loadSprites(prefix: "walk-right", from: directory)
     if !explicitRightFacing.isEmpty {
-        return pingPongFrames(explicitRightFacing)
+        return curatedRightWalkFrames(explicitRightFacing)
     }
 
     let allWalkFrames = loadSprites(prefix: "walk", from: directory)
     guard allWalkFrames.count >= 8 else {
-        return pingPongFrames(allWalkFrames)
+        return curatedRightWalkFrames(allWalkFrames)
     }
 
     // The first generated sheet mixed left-facing and right-facing poses.
     // Keep only the right-facing cells, then mirror them in code for left walks.
     let stableRightFacingIndexes = [2, 3, 4, 7]
-    let stableFrames = stableRightFacingIndexes.compactMap { index in
+    return stableRightFacingIndexes.compactMap { index in
         index < allWalkFrames.count ? allWalkFrames[index] : nil
     }
-    return pingPongFrames(stableFrames)
 }
 
-func pingPongFrames(_ frames: [NSImage]) -> [NSImage] {
-    guard frames.count > 2 else {
+func curatedRightWalkFrames(_ frames: [NSImage]) -> [NSImage] {
+    guard frames.count >= 3 else {
         return frames
     }
 
-    return frames + frames.dropLast().dropFirst().reversed()
+    // The generated walk set contains direction and scale drift.
+    // These two cells are the closest in pose and both face the same way.
+    return [frames[1], frames[2]]
 }
 
 func loadPetSprites() -> PetSpriteFrames {
@@ -261,9 +262,6 @@ final class PetCanvasView: NSView {
         let isBlinking = !isSleeping && (frameTick % 26 == 0 || frameTick % 26 == 1)
         let tailLift = CGFloat((frameTick % 10) - 5)
 
-        NSColor(calibratedWhite: 0.05, alpha: 0.12).setFill()
-        NSBezierPath(ovalIn: NSRect(x: 64, y: 18, width: 86, height: 18)).fill()
-
         let bodyColor = NSColor(calibratedRed: 0.82, green: 0.58, blue: 0.32, alpha: 1)
         let bellyColor = NSColor(calibratedRed: 0.95, green: 0.82, blue: 0.66, alpha: 1)
         let lineColor = NSColor(calibratedRed: 0.43, green: 0.28, blue: 0.18, alpha: 1)
@@ -393,28 +391,16 @@ final class PetCanvasView: NSView {
             return false
         }
 
-        let isWalking = action == .walkLeft || action == .walkRight
-        NSColor(calibratedWhite: 0.05, alpha: 0.12).setFill()
-        let shadowWidth: CGFloat = action == .sleep ? 112 : 96
-        let shadowScale = isWalking ? 1 + (sin(walkPhase()) * 0.04) : 1
-        NSBezierPath(ovalIn: NSRect(
-            x: petPosition.x - ((shadowWidth * shadowScale) / 2),
-            y: petPosition.y + 14,
-            width: shadowWidth * shadowScale,
-            height: 20
-        )).fill()
-
         let image = spriteFrame(for: frames)
-        let bob = isWalking ? sin(walkPhase()) * 2 : 0
         let size = action == .sleep ? NSSize(width: 184, height: 134) : NSSize(width: 180, height: 138)
         let rect = NSRect(
             x: petPosition.x - (size.width / 2),
-            y: petPosition.y + (action == .sleep ? 10 : 22 + bob),
+            y: petPosition.y + (action == .sleep ? 10 : 22),
             width: size.width,
             height: size.height
         )
 
-        if isWalking {
+        if action == .walkLeft || action == .walkRight {
             ctx.saveGState()
             ctx.translateBy(x: rect.midX, y: rect.midY)
             if action == .walkLeft {
@@ -434,10 +420,6 @@ final class PetCanvasView: NSView {
         return true
     }
 
-    private func walkPhase() -> CGFloat {
-        CGFloat(frameTick % 80) / 80 * CGFloat.pi * 2
-    }
-
     private func spriteFrame(for frames: [NSImage]) -> NSImage {
         switch action {
         case .idle:
@@ -445,7 +427,7 @@ final class PetCanvasView: NSView {
         case .lookAround:
             return frames[pingPongIndex(frameCount: frames.count, pace: 18)]
         case .walkLeft, .walkRight:
-            return frames[loopedIndex(frameCount: frames.count, pace: 5)]
+            return frames[loopedIndex(frameCount: frames.count, pace: 14)]
         case .groom:
             return frames[pingPongIndex(frameCount: frames.count, pace: 12)]
         case .stretch:
@@ -506,7 +488,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
     private var walkDestination: NSPoint?
-    private var walkReturnDestination: NSPoint?
+    private var nextWalkDirection: CGFloat = 1
     private var petPosition = NSPoint(x: 110, y: 120) {
         didSet {
             petView?.petPosition = petPosition
@@ -612,7 +594,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func dragPet(delta: NSSize) {
-        let nextPosition = NSPoint(x: petPosition.x + delta.width, y: petPosition.y + delta.height)
+        let nextPosition = NSPoint(x: petPosition.x + delta.width, y: petLaneY())
         petPosition = clampedPetPosition(nextPosition)
     }
 
@@ -620,7 +602,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         mode = nextMode
         behaviorTimer?.invalidate()
         walkDestination = nil
-        walkReturnDestination = nil
 
         switch nextMode {
         case .auto:
@@ -734,9 +715,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func menuQuit() { NSApp.terminate(nil) }
 
     private func moveHome() {
-        let bounds = movementBounds()
-        let homeY = min(max(rootView.bounds.height * 0.34, bounds.minY), bounds.maxY)
-        petPosition = NSPoint(x: rootView.bounds.midX, y: homeY)
+        petPosition = clampedPetPosition(NSPoint(x: rootView.bounds.midX, y: petLaneY()))
     }
 
     private func moveWalkStep() {
@@ -747,79 +726,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         let dx = destination.x - petPosition.x
-        let dy = destination.y - petPosition.y
-        let distance = hypot(dx, dy)
+        let distance = abs(dx)
 
         if distance <= walkSpeed {
-            petPosition = destination
+            petPosition = clampedPetPosition(destination)
             walkDestination = nil
-
-            if let returnDestination = walkReturnDestination {
-                walkReturnDestination = nil
-                action = .idle
-                scheduleReturnWalk(to: returnDestination)
-            } else {
-                action = .idle
-                scheduleNextBehavior(after: Double.random(in: 3.8 ... 6.8))
-            }
+            action = .idle
+            scheduleNextBehavior(after: Double.random(in: 0.8 ... 1.6))
             return
         }
 
-        let stepX = (dx / distance) * walkSpeed
-        let stepY = (dy / distance) * walkSpeed
-        petPosition = clampedPetPosition(NSPoint(x: petPosition.x + stepX, y: petPosition.y + stepY))
+        let stepX = (dx >= 0 ? 1 : -1) * walkSpeed
+        petPosition = clampedPetPosition(NSPoint(x: petPosition.x + stepX, y: petLaneY()))
     }
 
     private func startWalk() {
         let bounds = movementBounds()
-        let current = petPosition
-        let availableLeft = current.x - bounds.minX
-        let availableRight = bounds.maxX - current.x
-
-        let preferRight: Bool
-        if availableLeft < 240 {
-            preferRight = true
-        } else if availableRight < 240 {
-            preferRight = false
-        } else {
-            preferRight = Bool.random()
+        let current = clampedPetPosition(petPosition)
+        var direction = nextWalkDirection
+        if current.x <= bounds.minX + 24 {
+            direction = 1
+        } else if current.x >= bounds.maxX - 24 {
+            direction = -1
         }
-
         let maxHorizontalDistance = max(320, min(900, bounds.width * 0.72))
         let minHorizontalDistance = min(320, maxHorizontalDistance)
         let desiredDistance = CGFloat.random(in: minHorizontalDistance ... maxHorizontalDistance)
-        let destinationY = current.y
-
-        if preferRight {
-            let travel = min(desiredDistance, availableRight)
-            let destinationX = min(current.x + max(220, travel), bounds.maxX)
-            startWalk(to: NSPoint(x: destinationX, y: destinationY), returnTo: current)
-        } else {
-            let travel = min(desiredDistance, availableLeft)
-            let destinationX = max(current.x - max(220, travel), bounds.minX)
-            startWalk(to: NSPoint(x: destinationX, y: destinationY), returnTo: current)
-        }
+        let destinationX = min(max(current.x + (direction * desiredDistance), bounds.minX), bounds.maxX)
+        nextWalkDirection = -direction
+        startWalk(to: NSPoint(x: destinationX, y: petLaneY()))
     }
 
-    private func startWalk(to destination: NSPoint, returnTo returnDestination: NSPoint? = nil) {
+    private func startWalk(to destination: NSPoint) {
         let clampedDestination = clampedPetPosition(destination)
         walkDestination = clampedDestination
-        walkReturnDestination = returnDestination
         action = clampedDestination.x >= petPosition.x ? .walkRight : .walkLeft
-    }
-
-    private func scheduleReturnWalk(to destination: NSPoint) {
-        behaviorTimer?.invalidate()
-        guard mode == .auto else {
-            return
-        }
-
-        behaviorTimer = Timer.scheduledTimer(withTimeInterval: 0.9, repeats: false) { [weak self] _ in
-            guard let self = self, self.mode == .auto else {
-                return
-            }
-            self.startWalk(to: destination)
-        }
     }
 
     private func movementBounds() -> NSRect {
@@ -836,11 +777,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
     }
 
+    private func petLaneY() -> CGFloat {
+        let screenBounds = rootView.bounds
+        let minY: CGFloat = 42
+        let maxY = max(minY, screenBounds.height - 222)
+        return min(max(screenBounds.height * 0.34, minY), maxY)
+    }
+
     private func clampedPetPosition(_ point: NSPoint) -> NSPoint {
         let bounds = movementBounds()
         return NSPoint(
             x: min(max(point.x, bounds.minX), bounds.maxX),
-            y: min(max(point.y, bounds.minY), bounds.maxY)
+            y: petLaneY()
         )
     }
 

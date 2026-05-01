@@ -47,7 +47,7 @@ cat > "$APP_DIR/Contents/Info.plist" <<'PLIST'
   <key>CFBundleIconFile</key>
   <string>CatBuddyIcon</string>
   <key>CFBundleIdentifier</key>
-  <string>com.codex.catbuddy.native</string>
+  <string>com.alitayin.deskcat</string>
   <key>CFBundleInfoDictionaryVersion</key>
   <string>6.0</string>
   <key>CFBundleName</key>
@@ -57,7 +57,7 @@ cat > "$APP_DIR/Contents/Info.plist" <<'PLIST'
   <key>CFBundleShortVersionString</key>
   <string>0.1.0</string>
   <key>CFBundleVersion</key>
-  <string>1</string>
+  <string>2</string>
   <key>LSMinimumSystemVersion</key>
   <string>13.0</string>
   <key>NSHighResolutionCapable</key>
@@ -70,5 +70,7 @@ HOME=/tmp/swift-home \
 SWIFT_MODULECACHE_PATH=/tmp/swift-module-cache \
 CLANG_MODULE_CACHE_PATH=/tmp/clang-module-cache \
 swiftc "$ROOT_DIR/CatBuddy.swift" -o "$MACOS_DIR/CatBuddy" -framework Cocoa
+
+xattr -cr "$APP_DIR" 2>/dev/null || true
 
 echo "Built: $APP_DIR"
