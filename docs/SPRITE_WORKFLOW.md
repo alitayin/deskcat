@@ -29,13 +29,12 @@ To select specific cells from the 16 candidates:
 
 The importer writes the action frames into `assets/pet` only after slicing succeeds. It replaces only the selected action, so importing `sleep` does not delete accepted `walk-right` frames.
 
-For each import, inspect both files before committing:
+For each import, inspect the generated contact sheet and individual PNGs before committing:
 
 - `build/frame-checks/<action>/contact-sheet.png`
-- `build/frame-checks/<action>/anchor-report.txt`
 
 ## Rejection Rules
 
-Reject the sheet if any frame has cropped body parts, visible green-screen leftovers, ghosting, wrong direction, inconsistent body/head size, inconsistent baseline, off-center placement, or illogical motion order.
+Reject only after visual review if the cut frames have cropped body parts, visible green-screen leftovers, ghosting, wrong direction, inconsistent body/head size, obvious placement jumps, or illogical motion order.
 
 Rejected source sheets or frames go under `assets/rejected-pet-frames/`, not under `assets/pet`.

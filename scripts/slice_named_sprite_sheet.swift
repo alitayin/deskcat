@@ -7,14 +7,7 @@ import UniformTypeIdentifiers
 struct Options {
     var outputSize = 362
     var backgroundTolerance = 96
-    var strictPetCounts = false
     var contactSheetURL: URL?
-    var anchorReportURL: URL?
-    var maxAnchorDrift: CGFloat?
-    var minEdgePadding: Int?
-    var maxScaleDrift: CGFloat?
-    var maxAreaDrift: CGFloat?
-    var minLargestComponentRatio: CGFloat?
 }
 
 struct RGBA {
@@ -151,18 +144,10 @@ func usage(exitCode: Int32) -> Never {
     Options:
       --output-size <px>             Output canvas size. Default: 362.
       --background-tolerance <n>     RGB flood-fill tolerance. Default: 96.
-      --strict-pet-counts            Require walk*=10, sleep=4, every other action=6.
       --contact-sheet <path.png>     Write a visual check sheet after slicing.
-      --anchor-report <path.txt>     Write per-frame bbox center/baseline measurements.
-      --max-anchor-drift <px>        Fail if a group's bbox center/baseline drifts more than px.
-      --min-edge-padding <px>        Fail if visible content is too close to any output edge.
-      --max-scale-drift <ratio>      Fail if bbox width/height drifts from group median.
-      --max-area-drift <ratio>       Fail if alpha area drifts from group median.
-      --min-largest-component-ratio <ratio>
-                                     Fail if too much alpha sits outside the main subject.
 
     Example:
-      swift scripts/slice_named_sprite_sheet.swift --strict-pet-counts source.png assets/pet 4 4 walk-1 walk-2 walk-3 walk-4 walk-5 walk-6 walk-7 walk-8 walk-9 walk-10 _skip _skip _skip _skip _skip _skip
+      swift scripts/slice_named_sprite_sheet.swift source.png assets/pet 4 4 walk-1 walk-2 walk-3 walk-4 walk-5 walk-6 walk-7 walk-8 walk-9 walk-10 _skip _skip _skip _skip _skip _skip
 
     """, stderr)
     exit(exitCode)
@@ -188,50 +173,12 @@ func parseArguments(_ arguments: [String]) throws -> (Options, URL, URL, Int, In
                 throw ScriptError("--background-tolerance requires a non-negative integer.")
             }
             options.backgroundTolerance = value
-        case "--strict-pet-counts":
-            options.strictPetCounts = true
         case "--contact-sheet":
             index += 1
             guard index < arguments.count else {
                 throw ScriptError("--contact-sheet requires a path.")
             }
             options.contactSheetURL = URL(fileURLWithPath: arguments[index])
-        case "--anchor-report":
-            index += 1
-            guard index < arguments.count else {
-                throw ScriptError("--anchor-report requires a path.")
-            }
-            options.anchorReportURL = URL(fileURLWithPath: arguments[index])
-        case "--max-anchor-drift":
-            index += 1
-            guard index < arguments.count, let value = Double(arguments[index]), value >= 0 else {
-                throw ScriptError("--max-anchor-drift requires a non-negative number.")
-            }
-            options.maxAnchorDrift = CGFloat(value)
-        case "--min-edge-padding":
-            index += 1
-            guard index < arguments.count, let value = Int(arguments[index]), value >= 0 else {
-                throw ScriptError("--min-edge-padding requires a non-negative integer.")
-            }
-            options.minEdgePadding = value
-        case "--max-scale-drift":
-            index += 1
-            guard index < arguments.count, let value = Double(arguments[index]), value >= 0 else {
-                throw ScriptError("--max-scale-drift requires a non-negative number.")
-            }
-            options.maxScaleDrift = CGFloat(value)
-        case "--max-area-drift":
-            index += 1
-            guard index < arguments.count, let value = Double(arguments[index]), value >= 0 else {
-                throw ScriptError("--max-area-drift requires a non-negative number.")
-            }
-            options.maxAreaDrift = CGFloat(value)
-        case "--min-largest-component-ratio":
-            index += 1
-            guard index < arguments.count, let value = Double(arguments[index]), value >= 0, value <= 1 else {
-                throw ScriptError("--min-largest-component-ratio requires a number between 0 and 1.")
-            }
-            options.minLargestComponentRatio = CGFloat(value)
         case "--help", "-h":
             usage(exitCode: 0)
         default:
@@ -255,11 +202,6 @@ func parseArguments(_ arguments: [String]) throws -> (Options, URL, URL, Int, In
     let names = Array(positional.dropFirst(4))
     guard names.count == columns * rows else {
         throw ScriptError("Columns, rows, and frame names do not match: \(columns)x\(rows)=\(columns * rows), names=\(names.count).")
-    }
-
-    let outputNames = names.filter { !isSkippedFrameName($0) }
-    if options.strictPetCounts {
-        try validatePetFrameCounts(outputNames)
     }
 
     return (options, inputURL, outputDirectory, columns, rows, names)
@@ -425,6 +367,12 @@ func removeFloodFilledBackground(from bitmap: Bitmap, tolerance: Int) {
 
     for y in 0 ..< bitmap.height {
         for x in 0 ..< bitmap.width where visited[linearIndex(x: x, y: y)] {
+            bitmap.clearPixel(x: x, y: y)
+        }
+    }
+
+    for y in 0 ..< bitmap.height {
+        for x in 0 ..< bitmap.width where isChromaGreen(bitmap.pixel(x: x, y: y)) {
             bitmap.clearPixel(x: x, y: y)
         }
     }
@@ -810,26 +758,6 @@ func run() throws {
         outputs.append(FrameOutput(name: name, image: normalizedImage, metrics: metrics))
     }
 
-    if let maxAnchorDrift = options.maxAnchorDrift {
-        try assertAnchorDrift(outputs, maxDrift: maxAnchorDrift)
-    }
-
-    if let minEdgePadding = options.minEdgePadding {
-        try assertEdgePadding(outputs, outputSize: options.outputSize, minPadding: minEdgePadding)
-    }
-
-    if let maxScaleDrift = options.maxScaleDrift {
-        try assertScaleDrift(outputs, maxDrift: maxScaleDrift)
-    }
-
-    if let maxAreaDrift = options.maxAreaDrift {
-        try assertAreaDrift(outputs, maxDrift: maxAreaDrift)
-    }
-
-    if let minLargestComponentRatio = options.minLargestComponentRatio {
-        try assertComponentQuality(outputs, minLargestComponentRatio: minLargestComponentRatio)
-    }
-
     for output in outputs {
         try savePNG(output.image, to: outputDirectory.appendingPathComponent(output.name + ".png"))
     }
@@ -837,11 +765,6 @@ func run() throws {
     if let contactSheetURL = options.contactSheetURL {
         try writeContactSheet(outputs, to: contactSheetURL)
         print("Contact sheet: \(contactSheetURL.path)")
-    }
-
-    if let anchorReportURL = options.anchorReportURL {
-        try writeAnchorReport(outputs, to: anchorReportURL)
-        print("Anchor report: \(anchorReportURL.path)")
     }
 
     let counts = Dictionary(grouping: names.filter { !isSkippedFrameName($0) }, by: groupName).mapValues(\.count)

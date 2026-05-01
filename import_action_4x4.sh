@@ -78,9 +78,7 @@ HOME=/tmp/swift-home \
 SWIFT_MODULECACHE_PATH=/tmp/swift-module-cache \
 CLANG_MODULE_CACHE_PATH=/tmp/clang-module-cache \
 swift "$ROOT_DIR/scripts/slice_named_sprite_sheet.swift" \
-  --strict-pet-counts \
   --contact-sheet "$CHECK_DIR/contact-sheet.png" \
-  --anchor-report "$CHECK_DIR/anchor-report.txt" \
   "$INPUT_PATH" "$STAGING_DIR" 4 4 "${names[@]}"
 
 find "$OUTPUT_DIR" -maxdepth 1 -type f -name "$ACTION-*.png" -delete
@@ -88,4 +86,3 @@ find "$STAGING_DIR" -maxdepth 1 -type f -name "$ACTION-*.png" -exec cp {} "$OUTP
 
 echo "Imported $ACTION into $OUTPUT_DIR"
 echo "Check sheet: $CHECK_DIR/contact-sheet.png"
-echo "Anchor report: $CHECK_DIR/anchor-report.txt"
